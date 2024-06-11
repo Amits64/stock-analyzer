@@ -38,6 +38,50 @@ def get_db_connection():
     )
 
 
+# Function to create tables if they do not exist
+def create_tables():
+    connection = get_db_connection()
+    try:
+        with connection.cursor() as cursor:
+            # Create crypto_coins table
+            create_crypto_coins_table_query = """
+                CREATE TABLE IF NOT EXISTS crypto_coins (
+                    name VARCHAR(255) PRIMARY KEY,
+                    id VARCHAR(255),
+                    symbol VARCHAR(10),
+                    current_price DOUBLE,
+                    expected_return DOUBLE,
+                    price_day_1 DOUBLE,
+                    price_day_2 DOUBLE,
+                    price_day_3 DOUBLE,
+                    price_day_4 DOUBLE,
+                    price_day_5 DOUBLE,
+                    price_day_6 DOUBLE,
+                    price_day_7 DOUBLE
+                )
+            """
+            cursor.execute(create_crypto_coins_table_query)
+
+            # Create price_predictions table
+            create_price_predictions_table_query = """
+                CREATE TABLE IF NOT EXISTS price_predictions (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    cryptocurrency VARCHAR(255),
+                    predicted_price DOUBLE
+                )
+            """
+            cursor.execute(create_price_predictions_table_query)
+
+        connection.commit()
+        print("Tables created successfully.")
+    finally:
+        connection.close()
+
+
+if __name__ == "__main__":
+    create_tables()
+
+
 # Function to fetch cryptocurrency data from CoinGecko API
 def get_crypto_data():
     url = "https://api.coingecko.com/api/v3/coins/markets"
