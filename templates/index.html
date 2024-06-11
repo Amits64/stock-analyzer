@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Top Cryptocurrencies for Investment</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            color: #ddd;
+            margin: 0;
+            padding: 0;
+            background-image: url('/static/background.png'); /* Update the path to your background image */
+            background-size: cover;
+            background-repeat: no-repeat;
+            background-attachment: fixed;
+        }
+        h1 {
+            text-align: center;
+            color: #4CAF50;
+            margin-top: 50px; /* Adjust margin as needed */
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-bottom: 20px;
+            background-color: rgba(0, 0, 0, 0.7); /* Make the table slightly translucent */
+            color: #ddd;
+        }
+        th, td {
+            text-align: left;
+            padding: 8px;
+            border-bottom: 1px solid #ddd; /* Add borders to table cells */
+        }
+        th {
+            background-color: rgba(76, 175, 80, 0.7); /* Dark green background with opacity */
+            color: white;
+        }
+        tr:nth-child(even) {
+            background-color: rgba(51, 51, 51, 0.7); /* Dark gray background with opacity */
+        }
+        tr:hover {
+            background-color: rgba(85, 85, 85, 0.7); /* Darker gray background with opacity */
+        }
+        select {
+            width: 100%;
+            height: 40px;
+            font-size: 16px;
+            padding: 12px 20px;
+            border: 1px solid #ddd;
+            margin-bottom: 12px;
+        }
+        .pagination {
+            display: flex;
+            justify-content: center;
+            margin: 20px 0;
+        }
+        .pagination a {
+            color: white;
+            float: left;
+            padding: 8px 16px;
+            text-decoration: none;
+            background-color: #4CAF50;
+            margin: 0 4px;
+        }
+        .pagination a.active {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .pagination a:hover:not(.active) {
+            background-color: #555;
+        }
+    </style>
+</head>
+<body>
+    <h1>Top Cryptocurrencies for Investment</h1>
+    <select id="mySelect" onchange="myFunction()">
+        {% for coin in top_investments %}
+            <option value="{{ coin['name'] }}">{{ coin['name'] }}</option>
+        {% endfor %}
+    </select>
+    <table id="myTable" class="crypto-table">
+        <tr>
+            <th>Name</th>
+            <th>Symbol</th>
+            <th>Current Price (INR)</th>
+            <th>Expected Return</th>
+            <th>Day 1</th>
+            <th>Day 2</th>
+            <th>Day 3</th>
+            <th>Day 4</th>
+            <th>Day 5</th>
+            <th>Day 6</th>
+            <th>Day 7</th>
+            <th>Candlestick Graph</th>
+        </tr>
+        {% for coin in top_investments %}
+            <tr>
+                <td>{{ coin["name"] }}</td>
+                <td>{{ coin["symbol"] }}</td>
+                <td>{{ coin["current_price"] }}</td>
+                <td>{{ coin["expected_return"] }}</td>
+                <td>{{ coin["price_day_1"] }}</td>
+                <td>{{ coin["price_day_2"] }}</td>
+                <td>{{ coin["price_day_3"] }}</td>
+                <td>{{ coin["price_day_4"] }}</td>
+                <td>{{ coin["price_day_5"] }}</td>
+                <td>{{ coin["price_day_6"] }}</td>
+                <td>{{ coin["price_day_7"] }}</td>
+                <td><a href="/candlestick/{{ coin["symbol"] }}">View Candlestick Graph</a></td>
+            </tr>
+        {% endfor %}
+    </table>
+    <div class="pagination">
+        {% if page > 1 %}
+            <a href="/?page={{ page - 1 }}">&laquo; Previous</a>
+        {% endif %}
+        {% for i in range(1, (total // per_page) + 2) %}
+            <a href="/?page={{ i }}" class="{{ 'active' if i == page else '' }}">{{ i }}</a>
+        {% endfor %}
+        {% if page < (total // per_page) + 1 %}
+            <a href="/?page={{ page + 1 }}">Next &raquo;</a>
+        {% endif %}
+    </div>
+</body>
+</html>

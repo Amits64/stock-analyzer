@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Error Page</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            color: #ddd;
+            margin: 0;
+            padding: 0;
+            background-image: url('/static/background.png'); /* Update the path to your background image */
+            background-size: cover;
+            background-repeat: no-repeat;
+            background-attachment: fixed;
+        }
+        .container {
+            text-align: center;
+            margin-top: 100px; /* Adjust margin as needed */
+        }
+        h1 {
+            color: #ff5722;
+        }
+        p {
+            margin-top: 20px;
+        }
+        table {
+            margin: 20px auto;
+            border-collapse: collapse;
+            width: 80%;
+            background-color: rgba(0, 0, 0, 0.7); /* Make the table slightly translucent */
+        }
+        th, td {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+            text-align: left;
+            color: #ddd; /* Set text color to white */
+        }
+        th {
+            background-color: rgba(76, 175, 80, 0.7); /* Dark green background with opacity */
+        }
+        tr:hover {
+            background-color: rgba(85, 85, 85, 0.7); /* Darker gray background with opacity */
+        }
+        a {
+            color: #4caf50;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Error Encountered</h1>
+        <p>{{ error_message }}</p>
+        <p>Available coins:</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Symbol</th>
+                    <th>Candlestick Graph</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for coin in available_coins %}
+                    <tr>
+                        <td>{{ coin.name }}</td>
+                        <td>{{ coin.symbol }}</td>
+                        <td><a href="/candlestick/{{ coin.symbol }}">View Candlestick Graph</a></td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <p><a href="/">Back to Home</a></p>
+    </div>
+</body>
+</html>
