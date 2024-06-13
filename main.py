@@ -25,7 +25,7 @@ matplotlib.use('Agg')
 pd.options.display.float_format = '{:.2f}'.format
 
 # Initialize Redis client
-redis_client = redis.StrictRedis(host='192.168.10.10', port=6379, db=0)
+redis_client = redis.StrictRedis(host='192.168.50.12', port=30106, db=0)
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -448,4 +448,3 @@ def create_price_predictions_table():
 if __name__ == "__main__":
     create_price_predictions_table()  # Ensure the table is created before running the app
     app.run(host='0.0.0.0', debug=True)
-    
