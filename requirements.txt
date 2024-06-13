@@ -9,3 +9,8 @@ plotly
 diskcache
 tensorflow
 matplotlib
+redis
+sqlalchemy
+mysql
+base
+gunicorn

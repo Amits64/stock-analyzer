@@ -1,79 +1,55 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
 <head>
-    <title>Error Page</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <title>Error</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Custom CSS -->
     <style>
         body {
-            font-family: Arial, sans-serif;
-            color: #ddd;
-            margin: 0;
-            padding: 0;
-            background-image: url('/static/background.png'); /* Update the path to your background image */
-            background-size: cover;
-            background-repeat: no-repeat;
-            background-attachment: fixed;
+            padding-top: 50px;
         }
         .container {
-            text-align: center;
-            margin-top: 100px; /* Adjust margin as needed */
+            max-width: 800px;
         }
-        h1 {
-            color: #ff5722;
+        .error-title {
+            font-size: 2rem;
+            color: #dc3545;
         }
-        p {
-            margin-top: 20px;
+        .crypto-list {
+            padding-left: 0;
+            list-style: none;
         }
-        table {
-            margin: 20px auto;
-            border-collapse: collapse;
-            width: 80%;
-            background-color: rgba(0, 0, 0, 0.7); /* Make the table slightly translucent */
-        }
-        th, td {
-            padding: 10px;
+        .crypto-list li {
+            padding: 0.5rem 0;
             border-bottom: 1px solid #ddd;
-            text-align: left;
-            color: #ddd; /* Set text color to white */
         }
-        th {
-            background-color: rgba(76, 175, 80, 0.7); /* Dark green background with opacity */
-        }
-        tr:hover {
-            background-color: rgba(85, 85, 85, 0.7); /* Darker gray background with opacity */
-        }
-        a {
-            color: #4caf50;
-            text-decoration: none;
-        }
-        a:hover {
-            text-decoration: underline;
+        .logo {
+            max-width: 150px; /* Adjust the size as needed */
+            height: auto;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Error Encountered</h1>
-        <p>{{ error_message }}</p>
-        <p>Available coins:</p>
-        <table>
-            <thead>
-                <tr>
-                    <th>Name</th>
-                    <th>Symbol</th>
-                    <th>Candlestick Graph</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for coin in available_coins %}
-                    <tr>
-                        <td>{{ coin.name }}</td>
-                        <td>{{ coin.symbol }}</td>
-                        <td><a href="/candlestick/{{ coin.symbol }}">View Candlestick Graph</a></td>
-                    </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-        <p><a href="/">Back to Home</a></p>
+        <div class="text-center mb-5">
+            <img src="/static/logo.png" alt="Company Logo" class="img-fluid logo">
+        </div>
+        <div class="alert alert-danger" role="alert">
+            <h1 class="error-title">{{ error_message }}</h1>
+        </div>
+        <h2>Available Cryptocurrencies</h2>
+        <ul class="crypto-list">
+            {% for coin in available_coins %}
+                <li>{{ coin.name }} ({{ coin.symbol }})</li>
+            {% endfor %}
+        </ul>
     </div>
+    <!-- Bootstrap JS and dependencies -->
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
 </body>
 </html>

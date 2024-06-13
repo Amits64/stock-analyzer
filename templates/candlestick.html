@@ -10,7 +10,7 @@
             margin: 0;
             padding: 0;
             font-family: Arial, sans-serif;
-            background-image: url('/static/background.png'); /* Update the path to your background image */
+            background-image: url('/static/background.png');
             background-size: cover;
             background-repeat: no-repeat;
             background-attachment: fixed;
@@ -30,20 +30,21 @@
         }
         .graph-container {
             width: 80%;
-            height: 80vh; /* Adjust the percentage as needed */
-            margin: 0;
-            padding: 0;
-            background-color: rgba(0, 0, 0, 0.7); /* Make the graph container slightly translucent */
+            height: 80vh;
+            margin: 20px 0;
             padding: 20px;
+            background-color: rgba(0, 0, 0, 0.7);
             border-radius: 10px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5); /* Add shadow for better visibility */
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
         }
         .date-form {
             margin-bottom: 20px;
+            display: flex;
+            align-items: center;
         }
         .date-form label {
             margin-right: 10px;
-            color: white; /* Change text color to white */
+            color: white;
         }
         .date-form input[type="date"] {
             height: 40px;
@@ -51,7 +52,7 @@
             padding: 8px;
             border: 1px solid #ddd;
             margin-right: 10px;
-            color: black; /* Change text color to black */
+            color: black;
         }
         .date-form input[type="submit"] {
             height: 40px;
@@ -77,10 +78,10 @@
         table {
             width: 80%;
             margin: 20px 0;
-            background-color: rgba(0, 0, 0, 0.7); /* Make the table slightly translucent */
+            background-color: rgba(0, 0, 0, 0.7);
             padding: 10px;
             border-radius: 10px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5); /* Add shadow for better visibility */
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
         }
         th, td {
             padding: 8px;
@@ -96,47 +97,38 @@
             background-color: #555;
         }
     </style>
-    <!-- Include Plotly.js -->
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
 <body>
     <div class="container">
         <h1 class="title">Candlestick Graph for {{ symbol }}</h1>
 
-        <!-- Date selection form -->
         <form class="date-form" id="dateForm">
-            <label for="startDate" style="color: white;">Start Date:</label> <!-- Change text color to white -->
+            <label for="startDate">Start Date:</label>
             <input type="date" id="startDate" name="start_date">
 
-            <label for="endDate" style="color: white;">End Date:</label> <!-- Change text color to white -->
+            <label for="endDate">End Date:</label>
             <input type="date" id="endDate" name="end_date">
 
             <input type="submit" value="Update Graph">
         </form>
 
-        <!-- Graph container -->
         <div class="graph-container" id="candlestick-graph">
-            <!-- Render the candlestick graph -->
             {{ graph_html | safe }}
         </div>
 
-        <!-- Back to Homepage button -->
         <button class="back-btn" onclick="window.location.href='/'">Back to Homepage</button>
     </div>
 
-    <!-- JavaScript to handle form submission and initialize the Plotly graph -->
     <script>
         document.getElementById('dateForm').addEventListener('submit', function(event) {
-            event.preventDefault(); // Prevent form submission
+            event.preventDefault();
 
-            // Get selected start and end dates
             var startDate = document.getElementById('startDate').value;
             var endDate = document.getElementById('endDate').value;
 
-            // Construct the updated URL with selected dates
             var url = window.location.pathname + '?start_date=' + startDate + '&end_date=' + endDate;
 
-            // Fetch the new data
             fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
                 .then(response => response.json())
                 .then(data => {
@@ -153,9 +145,7 @@
                 .catch(error => console.error('Error fetching data:', error));
         });
 
-        // Initialize the Plotly graph
-        var graphData = {{ graph_html | safe }};
-        Plotly.newPlot('candlestick-graph', graphData.data, graphData.layout);
+        Plotly.newPlot('candlestick-graph', {{ graph_html | safe }});
     </script>
 </body>
 </html>

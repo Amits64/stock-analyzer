@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, send_from_directory
+from flask import Flask, render_template, request, send_from_directory, jsonify
 import pandas as pd
 import numpy as np
 import requests
@@ -16,6 +16,7 @@ import logging
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import os
 from hyperparameter_tuning import random_search
+import redis
 
 # Set up Flask app and other configurations
 app = Flask(__name__, static_url_path='/static')
@@ -23,13 +24,29 @@ cache = dc.Cache(".cache")
 matplotlib.use('Agg')
 pd.options.display.float_format = '{:.2f}'.format
 
+# Initialize Redis client
+redis_client = redis.StrictRedis(host='192.168.10.10', port=6379, db=0)
+
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 
 
+# Check if the key exists and get its value
+cached_data = redis_client.get('crypto_data')
+
+# Check if data is cached
+if cached_data:
+    print("Data is cached in Redis.")
+    # Print the cached data if needed
+    print(cached_data.decode())  # Decoding the byte data to string
+else:
+    print("Data is not cached in Redis.")
+
+
 def get_db_connection():
     return pymysql.connect(
-        host=os.getenv('MYSQL_HOST', 'localhost'),
+        host=os.getenv('MYSQL_HOST', '192.168.10.10'),
+        port=int(os.getenv('MYSQL_PORT', '3306')),
         user=os.getenv('MYSQL_USER', 'root'),
         password=os.getenv('MYSQL_PASSWORD', 'Kubernetes@1993'),
         db=os.getenv('MYSQL_DB', 'crypto_coins'),
@@ -73,7 +90,7 @@ def create_tables():
             cursor.execute(create_price_predictions_table_query)
 
         connection.commit()
-        print("Tables created successfully.")
+        logging.info("Tables created successfully.")
     finally:
         connection.close()
 
@@ -82,11 +99,28 @@ if __name__ == "__main__":
     create_tables()
 
 
+# Function to fetch data from database with Redis caching
+def fetch_data_from_db():
+    cached_data = redis_client.get('crypto_data')
+    if cached_data:
+        return json.loads(cached_data)
+    else:
+        connection = get_db_connection()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT * FROM crypto_coins")
+                data = cursor.fetchall()
+                redis_client.set('crypto_data', json.dumps(data))
+        finally:
+            connection.close()
+        return data
+
+
 # Function to fetch cryptocurrency data from CoinGecko API
 def get_crypto_data():
     url = "https://api.coingecko.com/api/v3/coins/markets"
     params = {
-        "vs_currency": "usd",
+        "vs_currency": "inr",
         "order": "market_cap_desc",
         "per_page": 250,
         "page": 1,
@@ -100,24 +134,6 @@ def get_crypto_data():
     return df
 
 
-# Function to create price predictions table
-def create_price_predictions_table():
-    connection = get_db_connection()
-    try:
-        with connection.cursor() as cursor:
-            create_table_query = """
-                CREATE TABLE IF NOT EXISTS price_predictions (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    cryptocurrency VARCHAR(255),
-                    predicted_price DOUBLE
-                )
-            """
-            cursor.execute(create_table_query)
-        connection.commit()
-    finally:
-        connection.close()
-
-
 # Function to save data to MySQL database
 def save_to_mysql_database(df, table_name):
     connection = get_db_connection()
@@ -125,35 +141,34 @@ def save_to_mysql_database(df, table_name):
         with connection.cursor() as cursor:
             create_table_query = f"""
             CREATE TABLE IF NOT EXISTS {table_name} (
-                Name VARCHAR(255),
+                name VARCHAR(255) PRIMARY KEY,
                 id VARCHAR(255),
-                Symbol VARCHAR(10),
-                Current_Price_INR DOUBLE,
-                Expected_Return DOUBLE,
-                Price_day_1_INR DOUBLE,
-                Price_day_2_INR DOUBLE,
-                Price_day_3_INR DOUBLE,
-                Price_day_4_INR DOUBLE,
-                Price_day_5_INR DOUBLE,
-                Price_day_6_INR DOUBLE,
-                Price_day_7_INR DOUBLE,
-                PRIMARY KEY (id)
+                symbol VARCHAR(10),
+                current_price DOUBLE,
+                expected_return DOUBLE,
+                price_day_1 DOUBLE,
+                price_day_2 DOUBLE,
+                price_day_3 DOUBLE,
+                price_day_4 DOUBLE,
+                price_day_5 DOUBLE,
+                price_day_6 DOUBLE,
+                price_day_7 DOUBLE
             )
             """
             cursor.execute(create_table_query)
 
             for index, row in df.iterrows():
                 insert_query = f"""
-                    INSERT INTO {table_name} (Name, id, Symbol, Current_Price_INR, Expected_Return,
-                                              Price_day_1_INR, Price_day_2_INR, Price_day_3_INR,
-                                              Price_day_4_INR, Price_day_5_INR, Price_day_6_INR, Price_day_7_INR)
+                    INSERT INTO {table_name} (name, id, symbol, current_price, expected_return,
+                                              price_day_1, price_day_2, price_day_3,
+                                              price_day_4, price_day_5, price_day_6, price_day_7)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE
-                    Name=VALUES(Name), Symbol=VALUES(Symbol), Current_Price_INR=VALUES(Current_Price_INR),
-                    Expected_Return=VALUES(Expected_Return), Price_day_1_INR=VALUES(Price_day_1_INR),
-                    Price_day_2_INR=VALUES(Price_day_2_INR), Price_day_3_INR=VALUES(Price_day_3_INR),
-                    Price_day_4_INR=VALUES(Price_day_4_INR), Price_day_5_INR=VALUES(Price_day_5_INR),
-                    Price_day_6_INR=VALUES(Price_day_6_INR), Price_day_7_INR=VALUES(Price_day_7_INR)
+                    name=VALUES(name), symbol=VALUES(symbol), current_price=VALUES(current_price),
+                    expected_return=VALUES(expected_return), price_day_1=VALUES(price_day_1),
+                    price_day_2=VALUES(price_day_2), price_day_3=VALUES(price_day_3),
+                    price_day_4=VALUES(price_day_4), price_day_5=VALUES(price_day_5),
+                    price_day_6=VALUES(price_day_6), price_day_7=VALUES(price_day_7)
                 """
                 cursor.execute(insert_query, (
                     row['name'], row['id'], row['symbol'], row['current_price'],
@@ -171,7 +186,6 @@ def get_filtered_crypto_data():
     connection = get_db_connection()
     try:
         with connection.cursor() as cursor:
-            # Execute the provided SQL query
             cursor.execute("SELECT * FROM crypto_coins WHERE expected_return >= 1 ORDER BY expected_return DESC")
             filtered_data = cursor.fetchall()
     finally:
@@ -333,9 +347,22 @@ def index():
 # Route for displaying candlestick graph for a cryptocurrency
 @app.route('/candlestick/<symbol>')
 def show_candlestick(symbol):
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+
+    if not start_date or not end_date:
+        # Default period if no dates provided
+        period = '1mo'
+        interval = '1d'
+    else:
+        # Custom period based on the dates provided
+        period = None  # No period when specific date range is provided
+        interval = '1d'
+
     try:
         # Fetch historical data for the cryptocurrency using symbol
-        df = yf.download(symbol, period='1mo', interval='1d')
+        df = yf.download(symbol, start=start_date, end=end_date, interval=interval) if period is None else yf.download(
+            symbol, period=period, interval=interval)
 
         # Check if the dataframe is empty (which means no data was fetched)
         if df.empty:
@@ -365,6 +392,16 @@ def show_candlestick(symbol):
         # Convert the figure to HTML
         graph_html = pyo.plot(candlestick_fig, output_type='div', include_plotlyjs=False)
 
+        # Check if the request is AJAX for updating the graph
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({
+                'index': df.index.format(),
+                'Open': df['Open'].tolist(),
+                'High': df['High'].tolist(),
+                'Low': df['Low'].tolist(),
+                'Close': df['Close'].tolist()
+            })
+
         # Render the HTML template with the candlestick graph
         return render_template('candlestick.html', symbol=symbol, graph_html=graph_html)
 
@@ -388,6 +425,24 @@ def show_candlestick(symbol):
 @app.route('/static/<path:filename>')
 def serve_static(filename):
     return send_from_directory(app.static_folder, filename)
+
+
+# Function to create price predictions table
+def create_price_predictions_table():
+    connection = get_db_connection()
+    try:
+        with connection.cursor() as cursor:
+            create_table_query = """
+                CREATE TABLE IF NOT EXISTS price_predictions (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    cryptocurrency VARCHAR(255),
+                    predicted_price DOUBLE
+                )
+            """
+            cursor.execute(create_table_query)
+        connection.commit()
+    finally:
+        connection.close()
 
 
 if __name__ == "__main__":
