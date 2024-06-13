@@ -1,0 +1,16 @@
+Flask
+pandas
+numpy
+requests
+pymysql
+yfinance
+scikit-learn
+plotly
+diskcache
+tensorflow
+matplotlib
+redis
+sqlalchemy
+mysql
+base
+gunicorn
