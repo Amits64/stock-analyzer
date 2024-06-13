@@ -448,3 +448,4 @@ def create_price_predictions_table():
 if __name__ == "__main__":
     create_price_predictions_table()  # Ensure the table is created before running the app
     app.run(host='0.0.0.0', debug=True)
+    
