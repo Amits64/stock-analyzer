@@ -1,6 +1,8 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Top Cryptocurrencies for Investment</title>
     <style>
         body {
@@ -95,6 +97,22 @@
         table.crypto-table tbody tr {
             animation: fadeIn 0.6s ease-out;
         }
+        .sentiment-indicator {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            margin-left: 5px;
+        }
+        .positive {
+            background-color: #4CAF50; /* Green */
+        }
+        .negative {
+            background-color: #f44336; /* Red */
+        }
+        .neutral {
+            background-color: #2196F3; /* Blue */
+        }
     </style>
 </head>
 <body>
@@ -144,6 +162,7 @@
                     <th>Market Cap Change % 24h</th>
                     <th>Market Cap Rank</th>
                     <th>Circulating Supply</th>
+                    <th>Sentiment</th>
                     <th>Candlestick Graph</th>
                 </tr>
             </thead>
@@ -170,6 +189,15 @@
                         <td>{{ coin["market_cap_change_percentage_24h"] }}%</td>
                         <td>{{ coin["market_cap_rank"] }}</td>
                         <td>{{ coin["circulating_supply"] }}</td>
+                        <td>
+                            {% if coin["sentiment"] == 'positive' %}
+                                <div class="sentiment-indicator positive" title="Positive"></div>
+                            {% elif coin["sentiment"] == 'negative' %}
+                                <div class="sentiment-indicator negative" title="Negative"></div>
+                            {% else %}
+                                <div class="sentiment-indicator neutral" title="Neutral"></div>
+                            {% endif %}
+                        </td>
                         <td><a href="/candlestick/{{ coin["id"] }}">View Candlestick Graph</a></td>
                     </tr>
                 {% endfor %}
