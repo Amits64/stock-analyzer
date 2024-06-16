@@ -1,11 +1,17 @@
-# feature_engineering.py
+import nltk
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
 
-import pandas as pd
+# Download VADER lexicon if not already downloaded
+nltk.download('vader_lexicon')
+
+# Initialize VADER sentiment analyzer
+sentiment_analyzer = SentimentIntensityAnalyzer()
+
 
 def extract_social_media_sentiment_features(symbol):
     """
-    Extract sentiment features from social media discussions for a given cryptocurrency symbol.
-    This function could use APIs or NLP libraries to analyze sentiment from social media data.
+    Extract sentiment features from social media discussions for a given cryptocurrency symbol
+    using VADER sentiment analysis.
 
     Parameters:
         symbol: Cryptocurrency symbol (e.g., 'BTC' for Bitcoin)
@@ -14,54 +20,11 @@ def extract_social_media_sentiment_features(symbol):
         Dictionary containing sentiment features
     """
     # Placeholder implementation
+    # Example: Analyze sentiment of a social media post discussing the symbol
+    sentiment_scores = sentiment_analyzer.polarity_scores(f"Discussing {symbol} on social media")
+
     social_media_sentiment_features = {
-        'positive_sentiment': 0.75,
-        'negative_sentiment': 0.25
+        'positive_sentiment': sentiment_scores['pos'],
+        'negative_sentiment': sentiment_scores['neg']
     }
     return social_media_sentiment_features
-
-
-def calculate_trading_volume_features(df):
-    """
-    Calculate trading volume features from historical trading data.
-
-    Parameters:
-        df: DataFrame containing historical trading data with a 'Volume' column
-
-    Returns:
-        DataFrame with added trading volume features
-    """
-    # Example: Calculate average trading volume for the past 7 days
-    df['average_volume_7d'] = df['Volume'].rolling(window=7).mean()
-    return df
-
-
-def calculate_market_sentiment_features():
-    """
-    Calculate market sentiment features using external indicators or sentiment analysis.
-
-    Returns:
-        Dictionary containing market sentiment features
-    """
-    # Placeholder implementation
-    market_sentiment_features = {
-        'fear_greed_index': 75,
-        'volatility_index': 0.5
-    }
-    return market_sentiment_features
-
-
-def calculate_technical_indicators(df):
-    """
-    Calculate technical analysis indicators from historical price data.
-
-    Parameters:
-        df: DataFrame containing historical price data with a 'Close' column
-
-    Returns:
-        DataFrame with added technical indicators
-    """
-    # Example: Calculate moving averages
-    df['ma_50'] = df['Close'].rolling(window=50).mean()
-    df['ma_200'] = df['Close'].rolling(window=200).mean()
-    return df
