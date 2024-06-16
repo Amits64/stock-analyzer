@@ -11,5 +11,4 @@ plotly
 diskcache
 matplotlib
 nltk
-cryptography
 gunicorn
