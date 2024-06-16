@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <title>Error</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Custom CSS -->
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f8f9fa; /* Light gray background */
+            padding-top: 50px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto; /* Center align container */
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1); /* Soft shadow for container */
+            background-color: #ffffff; /* White background for container */
+            border-radius: 8px; /* Rounded corners */
+        }
+        .error-title {
+            font-size: 2.5rem;
+            color: #dc3545;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .alert {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .crypto-list {
+            padding-left: 0;
+            list-style: none;
+            margin-top: 2rem;
+            border-top: 1px solid #ddd;
+            padding-top: 1rem;
+        }
+        .crypto-list li {
+            padding: 1rem 0;
+            border-bottom: 1px solid #ddd;
+            font-size: 1.1rem;
+            color: #333;
+        }
+        .logo {
+            max-width: 150px; /* Adjust the size as needed */
+            height: auto;
+            display: block;
+            margin: 0 auto 20px; /* Center align logo and add bottom margin */
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <img src="/static/logo.png" alt="Company Logo" class="img-fluid logo">
+        <h1 class="error-title">{{ error_message }}</h1>
+        <div class="alert alert-danger" role="alert">
+            An unexpected error occurred. Please try again later.
+        </div>
+        <h2>Available Cryptocurrencies</h2>
+        <ul class="crypto-list">
+            {% for coin in available_coins %}
+                <li>{{ coin.name }} ({{ coin.symbol }})</li>
+            {% endfor %}
+        </ul>
+    </div>
+    <!-- Bootstrap JS and dependencies -->
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+</body>
+</html>
