@@ -6,7 +6,6 @@ import pymysql.cursors
 import yfinance as yf
 import json
 from influxdb_client.client import query_api
-from pygments.lexers import go
 from sklearn.model_selection import train_test_split
 from concurrent.futures import ThreadPoolExecutor
 import plotly.io as pio
@@ -18,10 +17,12 @@ import matplotlib
 import logging
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import os
-from hyperparameter_tuning import random_search
 import redis
 from influxdb_client import InfluxDBClient, Point, WriteOptions
 from influxdb_client.client.write_api import SYNCHRONOUS
+
+# Import custom modules
+from hyperparameter_tuning import random_search  # Assuming this is a custom module for hyperparameter tuning
 
 # Set up Flask app and other configurations
 app = Flask(__name__, static_url_path='/static')
@@ -135,11 +136,25 @@ def save_to_mysql_database(df, table_name):
         with connection.cursor() as cursor:
             create_table_query = f"""
             CREATE TABLE IF NOT EXISTS {table_name} (
-                name VARCHAR(255) PRIMARY KEY,
-                id VARCHAR(255),
-                symbol VARCHAR(10),
+                name VARCHAR(255),
+                id VARCHAR(255) PRIMARY KEY,
                 current_price DOUBLE,
                 expected_return DOUBLE,
+                high_24h DOUBLE,
+                low_24h DOUBLE,
+                last_updated DATETIME,
+                price_change_24h DOUBLE,
+                price_change_percentage_24h DOUBLE,
+                ath DOUBLE,
+                ath_date DATE,
+                ath_change_percentage DOUBLE,
+                atl_change_percentage DOUBLE,
+                market_cap DOUBLE,
+                market_cap_change_24h DOUBLE,
+                market_cap_change_percentage_24h DOUBLE,
+                market_cap_rank INT,
+                circulating_supply DOUBLE,
+                symbol VARCHAR(10),
                 price_day_1 DOUBLE,
                 price_day_2 DOUBLE,
                 price_day_3 DOUBLE,
@@ -153,22 +168,38 @@ def save_to_mysql_database(df, table_name):
 
             for index, row in df.iterrows():
                 insert_query = f"""
-                    INSERT INTO {table_name} (name, id, symbol, current_price, expected_return,
-                                              price_day_1, price_day_2, price_day_3,
-                                              price_day_4, price_day_5, price_day_6, price_day_7)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO {table_name} (name, id, current_price, expected_return, high_24h, low_24h,
+                                              last_updated, price_change_24h, price_change_percentage_24h,
+                                              ath, ath_date, ath_change_percentage, atl_change_percentage,
+                                              market_cap, market_cap_change_24h, market_cap_change_percentage_24h,
+                                              market_cap_rank, circulating_supply, symbol,
+                                              price_day_1, price_day_2, price_day_3, price_day_4,
+                                              price_day_5, price_day_6, price_day_7)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                            %s, %s, %s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE
-                    name=VALUES(name), symbol=VALUES(symbol), current_price=VALUES(current_price),
-                    expected_return=VALUES(expected_return), price_day_1=VALUES(price_day_1),
-                    price_day_2=VALUES(price_day_2), price_day_3=VALUES(price_day_3),
-                    price_day_4=VALUES(price_day_4), price_day_5=VALUES(price_day_5),
-                    price_day_6=VALUES(price_day_6), price_day_7=VALUES(price_day_7)
+                    name=VALUES(name), current_price=VALUES(current_price), expected_return=VALUES(expected_return),
+                    high_24h=VALUES(high_24h), low_24h=VALUES(low_24h), last_updated=VALUES(last_updated),
+                    price_change_24h=VALUES(price_change_24h), price_change_percentage_24h=VALUES(price_change_percentage_24h),
+                    ath=VALUES(ath), ath_date=VALUES(ath_date), ath_change_percentage=VALUES(ath_change_percentage),
+                    atl_change_percentage=VALUES(atl_change_percentage), market_cap=VALUES(market_cap),
+                    market_cap_change_24h=VALUES(market_cap_change_24h),
+                    market_cap_change_percentage_24h=VALUES(market_cap_change_percentage_24h),
+                    market_cap_rank=VALUES(market_cap_rank), circulating_supply=VALUES(circulating_supply),
+                    symbol=VALUES(symbol),
+                    price_day_1=VALUES(price_day_1), price_day_2=VALUES(price_day_2), price_day_3=VALUES(price_day_3),
+                    price_day_4=VALUES(price_day_4), price_day_5=VALUES(price_day_5), price_day_6=VALUES(price_day_6),
+                    price_day_7=VALUES(price_day_7)
                 """
                 cursor.execute(insert_query, (
-                    row['name'], row['id'], row['symbol'], row['current_price'],
-                    row['expected_return'], row['price_day_1'], row['price_day_2'],
-                    row['price_day_3'], row['price_day_4'], row['price_day_5'],
-                    row['price_day_6'], row['price_day_7']
+                    row['name'], row['id'], row['current_price'], row['expected_return'],
+                    row['high_24h'], row['low_24h'], row['last_updated'],
+                    row['price_change_24h'], row['price_change_percentage_24h'],
+                    row['ath'], row['ath_date'], row['ath_change_percentage'], row['atl_change_percentage'],
+                    row['market_cap'], row['market_cap_change_24h'], row['market_cap_change_percentage_24h'],
+                    row['market_cap_rank'], row['circulating_supply'], row['symbol'],
+                    row['price_day_1'], row['price_day_2'], row['price_day_3'],
+                    row['price_day_4'], row['price_day_5'], row['price_day_6'], row['price_day_7']
                 ))
         connection.commit()
     finally:
@@ -235,6 +266,7 @@ def perform_hyperparameter_tuning(X_train, y_train):
 def predict_crypto_prices(df):
     predictions = {}
     X_tests = {}
+
 
     def train_and_predict(coin):
         coin_df = df[df['name'] == coin]
