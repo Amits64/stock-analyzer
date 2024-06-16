@@ -5,9 +5,12 @@ import requests
 import pymysql.cursors
 import yfinance as yf
 import json
+from influxdb_client.client import query_api
+from pygments.lexers import go
 from sklearn.model_selection import train_test_split
 from concurrent.futures import ThreadPoolExecutor
-import plotly.offline as pyo
+import plotly.io as pio
+import plotly.graph_objs as go
 import diskcache as dc
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, LSTM, Input, Dropout
@@ -17,6 +20,8 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import os
 from hyperparameter_tuning import random_search
 import redis
+from influxdb_client import InfluxDBClient, Point, WriteOptions
+from influxdb_client.client.write_api import SYNCHRONOUS
 
 # Set up Flask app and other configurations
 app = Flask(__name__, static_url_path='/static')
@@ -25,10 +30,43 @@ matplotlib.use('Agg')
 pd.options.display.float_format = '{:.2f}'.format
 
 # Initialize Redis client
-redis_client = redis.StrictRedis(host='192.168.50.12', port=30106, db=0)
+redis_client = redis.StrictRedis(host='192.168.10.10', port=6379, db=0)
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
+
+# Initialize InfluxDB client
+influxdb_url = "http://192.168.10.10:8086"
+influxdb_token = "9R592h_lq35-3DuWguaSiueHit64JwwpIinsUyANTvxqBGp8vBN8pL6smtwMFjgmVJbglqYkTjuzU1e0_qOUtA=="
+influxdb_org = "DevOps-Tech"
+influxdb_bucket = "crypto_coins_bkt"
+influxdb_client = InfluxDBClient(url=influxdb_url, token=influxdb_token, org=influxdb_org)
+write_api = influxdb_client.write_api(write_options=SYNCHRONOUS)
+
+
+def write_to_influxdb(df, measurement):
+    points = []
+    for index, row in df.iterrows():
+        point = Point(measurement)
+        for col, val in row.items():
+            if col == "time":
+                point = point.time(val)
+            elif isinstance(val, dict):
+                # Example: Flatten the dictionary or convert to individual fields
+                for key, value in val.items():
+                    point = point.field(f"{col}_{key}", value)
+            else:
+                point = point.field(col, val)
+        points.append(point)
+    write_api.write(bucket=influxdb_bucket, org=influxdb_org, record=points)
+    logging.info(f"Written data to InfluxDB: {measurement}")
+
+
+def get_influxdb_data():
+    query = f'from(bucket:"{influxdb_bucket}") |> range(start: -7d) |> filter(fn: (r) => r["_measurement"] == ' \
+            f'"crypto_prices")'
+    result = query_api.query_data_frame(org=influxdb_org, query=query)
+    return result.set_index('time')
 
 
 # Check if the key exists and get its value
@@ -53,50 +91,6 @@ def get_db_connection():
         charset='utf8mb4',
         cursorclass=pymysql.cursors.DictCursor
     )
-
-
-# Function to create tables if they do not exist
-def create_tables():
-    connection = get_db_connection()
-    try:
-        with connection.cursor() as cursor:
-            # Create crypto_coins table
-            create_crypto_coins_table_query = """
-                CREATE TABLE IF NOT EXISTS crypto_coins (
-                    name VARCHAR(255) PRIMARY KEY,
-                    id VARCHAR(255),
-                    symbol VARCHAR(10),
-                    current_price DOUBLE,
-                    expected_return DOUBLE,
-                    price_day_1 DOUBLE,
-                    price_day_2 DOUBLE,
-                    price_day_3 DOUBLE,
-                    price_day_4 DOUBLE,
-                    price_day_5 DOUBLE,
-                    price_day_6 DOUBLE,
-                    price_day_7 DOUBLE
-                )
-            """
-            cursor.execute(create_crypto_coins_table_query)
-
-            # Create price_predictions table
-            create_price_predictions_table_query = """
-                CREATE TABLE IF NOT EXISTS price_predictions (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    cryptocurrency VARCHAR(255),
-                    predicted_price DOUBLE
-                )
-            """
-            cursor.execute(create_price_predictions_table_query)
-
-        connection.commit()
-        logging.info("Tables created successfully.")
-    finally:
-        connection.close()
-
-
-if __name__ == "__main__":
-    create_tables()
 
 
 # Function to fetch data from database with Redis caching
@@ -179,6 +173,8 @@ def save_to_mysql_database(df, table_name):
         connection.commit()
     finally:
         connection.close()
+    # Write to InfluxDB
+    write_to_influxdb(df, table_name)
 
 
 # Function to fetch filtered cryptocurrency data
@@ -308,11 +304,22 @@ def evaluate_model_performance(y_true, y_pred):
 @app.route('/')
 def index():
     try:
+        sort_field = request.args.get('sort_field', 'name')
+        sort_order = request.args.get('sort_order', 'asc')
         crypto_df = get_crypto_data()
         if not crypto_df.empty:
             if 'current_price' not in crypto_df.columns:
                 return "API response does not contain 'current_price' column."
             top_investments = analyze_crypto_data(crypto_df)
+
+            # Sorting
+            valid_fields = ['name', 'current_price', 'expected_return', 'market_cap_rank']  # Add other fields if needed
+            if sort_field not in valid_fields:
+                sort_field = 'name'
+            if sort_order not in ['asc', 'desc']:
+                sort_order = 'asc'
+            top_investments.sort_values(by=sort_field, ascending=(sort_order == 'asc'), inplace=True)
+
             predictions, _ = predict_crypto_prices(top_investments)
             for coin, prediction in predictions.items():
                 if not isinstance(prediction, list):
@@ -336,7 +343,9 @@ def index():
                                    raw_data_filename=raw_data_filename,
                                    page=page,
                                    total=total,
-                                   per_page=per_page)
+                                   per_page=per_page,
+                                   sort_field=sort_field,
+                                   sort_order=sort_order)
         else:
             return "Failed to fetch crypto data from CoinGecko API."
     except Exception as e:
@@ -344,53 +353,78 @@ def index():
         return "An error occurred."
 
 
+# Function to add technical indicators
+def add_technical_indicators(df):
+    df['SMA'] = df['Close'].rolling(window=20).mean()  # Example: Simple Moving Average (SMA)
+    return df
+
+
 # Route for displaying candlestick graph for a cryptocurrency
 @app.route('/candlestick/<symbol>')
 def show_candlestick(symbol):
-    start_date = request.args.get('start_date')
-    end_date = request.args.get('end_date')
-
-    if not start_date or not end_date:
-        # Default period if no dates provided
-        period = '1mo'
-        interval = '1d'
-    else:
-        # Custom period based on the dates provided
-        period = None  # No period when specific date range is provided
-        interval = '1d'
-
     try:
-        # Fetch historical data for the cryptocurrency using symbol
-        df = yf.download(symbol, start=start_date, end=end_date, interval=interval) if period is None else yf.download(
-            symbol, period=period, interval=interval)
+        # Fetch ticker symbol from the database
+        connection = get_db_connection()
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT symbol FROM crypto_coins WHERE name = %s OR symbol = %s", (symbol, symbol))
+            result = cursor.fetchone()
+            if not result:
+                raise ValueError(f"No data found for symbol or name: {symbol}")
+            ticker = result['symbol']
+
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+
+        if not start_date or not end_date:
+            # Default period if no dates provided
+            period = '1mo'
+            interval = '1d'
+        else:
+            # Custom period based on the dates provided
+            period = None  # No period when specific date range is provided
+            interval = '1d'
+
+        # Fetch historical data for the cryptocurrency using ticker
+        if period:
+            df = yf.download(ticker, period=period, interval=interval)
+        else:
+            df = yf.download(ticker, start=start_date, end=end_date, interval=interval)
 
         # Check if the dataframe is empty (which means no data was fetched)
         if df.empty:
             raise ValueError(f"No data found for symbol: {symbol}")
 
-        # Generate the candlestick graph
-        candlestick_fig = {
-            'data': [
-                {
-                    'x': df.index,
-                    'open': df['Open'],
-                    'high': df['High'],
-                    'low': df['Low'],
-                    'close': df['Close'],
-                    'type': 'candlestick',
-                    'name': symbol,
-                    'showlegend': False
-                }
-            ],
-            'layout': {
-                'title': f'Candlestick Graph for {symbol}',
-                'xaxis': {'title': 'Date'},
-                'yaxis': {'title': 'Price'}
-            }
-        }
+        # Add technical indicators (e.g., SMA) to the dataframe
+        df = add_technical_indicators(df)
+
+        # Generate the candlestick graph using Plotly
+        candlestick_fig = go.Figure(data=[go.Candlestick(
+            x=df.index,
+            open=df['Open'],
+            high=df['High'],
+            low=df['Low'],
+            close=df['Close'],
+            name=symbol
+        )])
+
+        # Add SMA to the candlestick graph
+        candlestick_fig.add_trace(go.Scatter(
+            x=df.index,
+            y=df['SMA'],
+            mode='lines',
+            name='SMA',
+            line=dict(color='orange', width=2)
+        ))
+
+        candlestick_fig.update_layout(
+            title=f'Candlestick Graph for {symbol}',
+            xaxis_title='Date',
+            yaxis_title='Price',
+            xaxis_rangeslider_visible=False
+        )
 
         # Convert the figure to HTML
-        graph_html = pyo.plot(candlestick_fig, output_type='div', include_plotlyjs=False)
+        graph_html = pio.to_html(candlestick_fig, full_html=False)
 
         # Check if the request is AJAX for updating the graph
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
@@ -408,7 +442,6 @@ def show_candlestick(symbol):
     except Exception as e:
         # Fetch the list of available coins from the database
         try:
-            connection = get_db_connection()
             with connection.cursor() as cursor:
                 cursor.execute("SELECT name, symbol FROM crypto_coins")
                 available_coins = cursor.fetchall()
