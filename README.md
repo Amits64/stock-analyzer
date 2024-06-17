@@ -69,7 +69,21 @@ Set the following environment variables:
   pip install -r requirements.txt
   ```
 
-3. Run the Flask application:
+3. Install required Docker Images
+  ```
+  docker run -d --name mysql-custom -e MYSQL_ROOT_PASSWORD=<PASSWORD> -d mysql:tag
+  ```
+  ```
+  docker run -d --name redis-custom -d redis:latest
+  ```
+  ```
+  docker run -d \
+   -p 8086:8086 \
+   -v "$PWD/data:/var/lib/influxdb2" \
+   -v "$PWD/config:/etc/influxdb2" \
+   influxdb:2
+  ``` 
+5. Run the Flask application:
   ```
   python app.py
   ```
