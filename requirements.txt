@@ -22,3 +22,4 @@ packaging
 zipp
 future
 platformdirs
+influx-client
