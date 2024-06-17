@@ -18,7 +18,7 @@ import logging
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import os
 import redis
-from influxdb_client import InfluxDBClient, Point, WriteOptions
+from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
 
 # Import custom modules
@@ -280,6 +280,82 @@ def predict_crypto_prices(df):
     return predictions, X_tests
 
 
+def fetch_historical_data(symbol, start_date, end_date):
+    try:
+        # Fetch historical data using Yahoo Finance API
+        df = yf.download(symbol, start=start_date, end=end_date, interval='1d')
+        return df
+    except Exception as e:
+        logging.error(f"Error fetching historical data for {symbol}: {str(e)}")
+        return pd.DataFrame()  # Return empty DataFrame on error
+
+
+def preprocess_data(df):
+    try:
+        # Example: Calculate technical indicators (SMA, EMA, RSI, etc.)
+        df['SMA_20'] = df['Close'].rolling(window=20).mean()
+        df['EMA_10'] = df['Close'].ewm(span=10, adjust=False).mean()
+        # Add more features as needed
+
+        # Drop NaN values if any
+        df.dropna(inplace=True)
+
+        # Scale numerical features if required (using MinMaxScaler or StandardScaler)
+        # Example:
+        # from sklearn.preprocessing import MinMaxScaler
+        # scaler = MinMaxScaler()
+        # df_scaled = scaler.fit_transform(df[['Close', 'SMA_20', 'EMA_10']])
+        # df[['Close', 'SMA_20', 'EMA_10']] = df_scaled
+
+        return df
+    except Exception as e:
+        logging.error(f"Error preprocessing data: {str(e)}")
+        return pd.DataFrame()
+
+
+# Example function to fetch and preprocess data
+def fetch_and_preprocess_data(symbol, start_date, end_date):
+    df = fetch_historical_data(symbol, start_date, end_date)
+    if not df.empty:
+        df_preprocessed = preprocess_data(df)
+        return df_preprocessed
+    else:
+        return pd.DataFrame()
+
+
+def build_lstm_model(input_shape):
+    model = Sequential()
+    model.add(LSTM(units=50, return_sequences=True, input_shape=input_shape))
+    model.add(Dropout(0.2))
+    model.add(LSTM(units=50))
+    model.add(Dropout(0.2))
+    model.add(Dense(units=1))  # Output layer
+    model.compile(optimizer='adam', loss='mean_squared_error')
+    return model
+
+
+def train_model(X_train, y_train, epochs=50, batch_size=32):
+    model = build_lstm_model(input_shape=(X_train.shape[1], X_train.shape[2]))
+    model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0)
+    return model
+
+
+def evaluate_model(model, X_test, y_test):
+    y_pred = model.predict(X_test)
+    mse = mean_squared_error(y_test, y_pred)
+    mae = mean_absolute_error(y_test, y_pred)
+    return mse, mae
+
+
+def predict_next_week_prices(model, latest_data):
+    # Assuming latest_data is the preprocessed DataFrame containing recent data
+    # Prepare input for prediction (reshape if using LSTM)
+    X = latest_data.values.reshape((1, latest_data.shape[0], latest_data.shape[1]))
+    # Predict next week's prices
+    predicted_prices = model.predict(X)
+    return predicted_prices.flatten()[0]  # Return the predicted price
+
+
 # Function to save predictions to MySQL
 def save_predictions_to_mysql(predictions):
     connection = get_db_connection()
@@ -378,6 +454,7 @@ def add_technical_indicators(df):
 
 
 # Route for displaying candlestick graph for a cryptocurrency
+# Route for displaying candlestick graph for a cryptocurrency
 @app.route('/candlestick/<symbol>')
 def show_candlestick(symbol):
     try:
@@ -393,24 +470,8 @@ def show_candlestick(symbol):
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
 
-        if not start_date or not end_date:
-            # Default period if no dates provided
-            period = '1mo'
-            interval = '1d'
-        else:
-            # Custom period based on the dates provided
-            period = None  # No period when specific date range is provided
-            interval = '1d'
-
         # Fetch historical data for the cryptocurrency using ticker
-        if period:
-            df = yf.download(ticker, period=period, interval=interval)
-        else:
-            df = yf.download(ticker, start=start_date, end=end_date, interval=interval)
-
-        # Check if the dataframe is empty (which means no data was fetched)
-        if df.empty:
-            raise ValueError(f"No data found for symbol: {symbol}")
+        df = fetch_historical_data(ticker, start_date, end_date)
 
         # Add technical indicators (e.g., SMA) to the dataframe
         df = add_technical_indicators(df)
@@ -458,24 +519,39 @@ def show_candlestick(symbol):
         return render_template('candlestick.html', symbol=symbol, graph_html=graph_html)
 
     except Exception as e:
-        # Fetch the list of available coins from the database
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute("SELECT name, symbol FROM crypto_coins")
-                available_coins = cursor.fetchall()
-        except Exception as ex:
-            logging.error(f"Failed to fetch available coins: {str(ex)}")
-        available_coins = []
-
+        # Handle errors gracefully
         logging.error(f"Error in show_candlestick route for symbol {symbol}: {str(e)}")
-        return render_template('error.html', error_message=str(e), available_coins=available_coins)
+        return render_template('error.html', error_message=str(e))
 
     finally:
         connection.close()
 
-        # Function to fetch available cryptocurrencies from MySQL
+
+# Flask route for API to fetch historical price data
+@app.route('/api/historical-price', methods=['GET'])
+def get_historical_price_data_api():
+    try:
+        symbol = request.args.get('symbol')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+
+        # Fetch historical data from a data source (e.g., Yahoo Finance)
+        if symbol and start_date and end_date:
+            df = fetch_historical_data(symbol, start_date, end_date)
+
+            # Convert DataFrame to JSON format
+            data_json = df.reset_index().to_json(orient='records')
+
+            return jsonify(data_json)
+
+        else:
+            return jsonify({'error': 'Missing parameters: symbol, start_date, end_date'}), 400
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
+# Function to fetch available cryptocurrencies from MySQL
 def fetch_available_cryptocurrencies():
     connection = get_db_connection()
     try:
