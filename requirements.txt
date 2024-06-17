@@ -1,4 +1,4 @@
-flask
+Flask
 pandas
 numpy
 requests
@@ -11,4 +11,14 @@ plotly
 diskcache
 matplotlib
 nltk
-gunicorn
+pip
+wheel
+cryptography
+pillow
+jinja2
+base
+setuptools
+packaging
+zipp
+future
+platformdirs
