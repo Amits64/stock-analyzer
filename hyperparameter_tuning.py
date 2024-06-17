@@ -37,20 +37,3 @@ def random_search(model, param_distributions, X_train, y_train):
     random_search = RandomizedSearchCV(model, param_distributions, n_iter=10, cv=5)
     random_search.fit(X_train, y_train)
     return random_search.best_params_
-
-
-def perform_k_fold_cross_validation(model, X, y, cv=5):
-    """
-    Perform k-fold cross-validation for evaluating model performance.
-
-    Parameters:
-        model: Machine learning model
-        X: Features
-        y: Target variable
-        cv: Number of folds for cross-validation (default is 5)
-
-    Returns:
-        Mean cross-validated score
-    """
-    scores = cross_val_score(model, X, y, cv=cv)
-    return scores.mean()
