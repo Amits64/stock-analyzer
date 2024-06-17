@@ -127,10 +127,21 @@
             var startDate = document.getElementById('startDate').value;
             var endDate = document.getElementById('endDate').value;
 
+            // Validate dates (basic check for existence)
+            if (!startDate || !endDate) {
+                console.error('Please provide both start and end dates.');
+                return;
+            }
+
             var url = window.location.pathname + '?start_date=' + startDate + '&end_date=' + endDate;
 
             fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-                .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
                 .then(data => {
                     var update = {
                         'x': [data.index],
@@ -145,7 +156,56 @@
                 .catch(error => console.error('Error fetching data:', error));
         });
 
-        Plotly.newPlot('candlestick-graph', {{ graph_html | safe }});
+        var candlestickData = {{ graph_html | safe }};
+
+        Plotly.newPlot('candlestick-graph', candlestickData, {
+            xaxis: {
+                rangeslider: {
+                    visible: true
+                }
+            },
+            yaxis: {
+                fixedrange: false
+            },
+            dragmode: 'zoom',
+            margin: {
+                t: 50,
+                b: 50,
+                l: 50,
+                r: 50
+            }
+        });
+
+        var graphDiv = document.getElementById('candlestick-graph');
+
+        graphDiv.on('plotly_relayout', function(eventData) {
+            if (eventData['xaxis.range[0]'] || eventData['xaxis.range[1]']) {
+                var startRange = new Date(eventData['xaxis.range[0]']).toISOString().split('T')[0];
+                var endRange = new Date(eventData['xaxis.range[1]']).toISOString().split('T')[0];
+
+                var url = window.location.pathname + '?start_date=' + startRange + '&end_date=' + endRange;
+
+                fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Network response was not ok');
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        var update = {
+                            'x': [data.index],
+                            'open': [data.Open],
+                            'high': [data.High],
+                            'low': [data.Low],
+                            'close': [data.Close]
+                        };
+
+                        Plotly.update('candlestick-graph', update);
+                    })
+                    .catch(error => console.error('Error fetching data:', error));
+            }
+        });
     </script>
 </body>
 </html>
