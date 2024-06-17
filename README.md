@@ -13,6 +13,7 @@ The application fetches data from CoinGecko API, stores it in MySQL database, an
 - Predicts cryptocurrency prices using LSTM models.
 - Visualizes candlestick charts using Plotly.
 - Provides error handling and logging.
+- API integration for data retrival.
 
  ## Requirements
     
@@ -88,11 +89,32 @@ Set the following environment variables:
   python app.py
   ```
 
-Screenshots:
+## To use different APIs, use below commands:
+  ```
+  curl -G http://localhost:5000/api/crypto-data --data-urlencode "min_expected_return=1.5"
+  ```
+
+  ```
+  curl -G http://localhost:5000/api/historical-price --data-urlencode "symbol=BTC" --data-urlencode "start_date=2022-01-01" --data-urlencode "end_date=2022-01-07"
+  ```
+
+  ```
+  curl http://localhost:5000/api/predict-next-week-price/BTC
+  ```
+
+  ```
+  curl http://localhost:5000/api/available-cryptocurrencies
+  ```
+
+  ```
+  curl http://localhost:5000/api/analyze-crypto-data
+  ```
+## Screenshots:
 
 ![image](https://github.com/Amits64/stock-analyzer/assets/135766785/030c8299-2aa2-4844-8638-9d2b6613be2d)
 
-![image](https://github.com/Amits64/stock-analyzer/assets/135766785/6068a0b2-f327-4855-999f-0c1a016f114e)
+![newplot (1)](https://github.com/Amits64/stock-analyzer/assets/135766785/9ba7e7a0-77c8-4c63-a0ff-f7eff4ecdc51)
+
 
 
 ## Usage
