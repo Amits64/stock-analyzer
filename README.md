@@ -74,6 +74,13 @@ Set the following environment variables:
   python app.py
   ```
 
+Screenshots:
+
+![image](https://github.com/Amits64/stock-analyzer/assets/135766785/030c8299-2aa2-4844-8638-9d2b6613be2d)
+
+![image](https://github.com/Amits64/stock-analyzer/assets/135766785/6068a0b2-f327-4855-999f-0c1a016f114e)
+
+
 ## Usage
 
 - Access the dashboard at [http://localhost:5000](http://localhost:5000) after starting the Flask server.
