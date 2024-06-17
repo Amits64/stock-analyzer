@@ -45,6 +45,18 @@ influxdb_client = InfluxDBClient(url=influxdb_url, token=influxdb_token, org=inf
 write_api = influxdb_client.write_api(write_options=SYNCHRONOUS)
 
 
+def get_db_connection():
+    return pymysql.connect(
+        host=os.getenv('MYSQL_HOST', '192.168.10.10'),
+        port=int(os.getenv('MYSQL_PORT', '3306')),
+        user=os.getenv('MYSQL_USER', 'root'),
+        password=os.getenv('MYSQL_PASSWORD', 'Kubernetes@1993'),
+        db=os.getenv('MYSQL_DB', 'crypto_coins'),
+        charset='utf8mb4',
+        cursorclass=pymysql.cursors.DictCursor
+    )
+
+
 def write_to_influxdb(df, measurement):
     points = []
     for index, row in df.iterrows():
@@ -68,30 +80,6 @@ def get_influxdb_data():
             f'"crypto_prices")'
     result = query_api.query_data_frame(org=influxdb_org, query=query)
     return result.set_index('time')
-
-
-# Check if the key exists and get its value
-cached_data = redis_client.get('crypto_data')
-
-# Check if data is cached
-if cached_data:
-    print("Data is cached in Redis.")
-    # Print the cached data if needed
-    print(cached_data.decode())  # Decoding the byte data to string
-else:
-    print("Data is not cached in Redis.")
-
-
-def get_db_connection():
-    return pymysql.connect(
-        host=os.getenv('MYSQL_HOST', '192.168.10.10'),
-        port=int(os.getenv('MYSQL_PORT', '3306')),
-        user=os.getenv('MYSQL_USER', 'root'),
-        password=os.getenv('MYSQL_PASSWORD', 'Kubernetes@1993'),
-        db=os.getenv('MYSQL_DB', 'crypto_coins'),
-        charset='utf8mb4',
-        cursorclass=pymysql.cursors.DictCursor
-    )
 
 
 # Function to fetch data from database with Redis caching
@@ -227,7 +215,6 @@ def analyze_crypto_data(df):
     else:
         logging.warning("Column 'price_change_percentage_24h' is missing in the API response.")
         df["expected_return"] = 1  # Default to 1 if the column is missing
-
     for day in range(1, 8):
         df[f"price_day_{day}"] = df["current_price"] * (df["expected_return"] ** day)
 
@@ -242,7 +229,7 @@ def build_and_train_model(X_train, y_train, params):
         Input(shape=(X_train.shape[1], 1)),
         LSTM(params['units'], return_sequences=True),
         Dropout(params['dropout']),
-        LSTM(params['units']),
+        LSTM(params['units'] // 2),  # Reduced units in the second LSTM layer
         Dropout(params['dropout']),
         Dense(1)
     ])
@@ -266,7 +253,6 @@ def perform_hyperparameter_tuning(X_train, y_train):
 def predict_crypto_prices(df):
     predictions = {}
     X_tests = {}
-
 
     def train_and_predict(coin):
         coin_df = df[df['name'] == coin]
@@ -477,39 +463,52 @@ def show_candlestick(symbol):
             with connection.cursor() as cursor:
                 cursor.execute("SELECT name, symbol FROM crypto_coins")
                 available_coins = cursor.fetchall()
-        except Exception as db_error:
-            logging.error(f"Database error: {str(db_error)}")
-            available_coins = []
+        except Exception as ex:
+            logging.error(f"Failed to fetch available coins: {str(ex)}")
+        available_coins = []
 
-        # Handle errors gracefully
-        error_message = f"Error: {str(e)}"
-        return render_template('error.html', error_message=error_message, available_coins=available_coins)
+        logging.error(f"Error in show_candlestick route for symbol {symbol}: {str(e)}")
+        return render_template('error.html', error_message=str(e), available_coins=available_coins)
 
-
-# Add a route to serve static files, if necessary
-@app.route('/static/<path:filename>')
-def serve_static(filename):
-    return send_from_directory(app.static_folder, filename)
-
-
-# Function to create price predictions table
-def create_price_predictions_table():
-    connection = get_db_connection()
-    try:
-        with connection.cursor() as cursor:
-            create_table_query = """
-                CREATE TABLE IF NOT EXISTS price_predictions (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    cryptocurrency VARCHAR(255),
-                    predicted_price DOUBLE
-                )
-            """
-            cursor.execute(create_table_query)
-        connection.commit()
     finally:
         connection.close()
 
+        # Function to fetch available cryptocurrencies from MySQL
 
-if __name__ == "__main__":
-    create_price_predictions_table()  # Ensure the table is created before running the app
-    app.run(host='0.0.0.0', debug=True)
+
+def fetch_available_cryptocurrencies():
+    connection = get_db_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT DISTINCT name FROM crypto_coins ORDER BY name")
+            available_coins = [row['name'] for row in cursor.fetchall()]
+    finally:
+        connection.close()
+    return available_coins
+
+
+# Flask route for the candlestick chart
+@app.route('/candlestick_chart')
+def candlestick_chart():
+    try:
+        available_coins = fetch_available_cryptocurrencies()
+        return render_template('candlestick_chart.html', available_coins=available_coins)
+    except Exception as e:
+        logging.error(f"Error in candlestick_chart route: {str(e)}")
+        return "An error occurred."
+
+
+# Flask route for handling errors
+@app.errorhandler(404)
+def page_not_found(e):
+    return render_template('404.html'), 404
+
+
+# Flask route for handling server errors
+@app.errorhandler(500)
+def server_error(e):
+    return render_template('500.html'), 500
+
+
+if __name__ == '__main__':
+    app.run(debug=True)
