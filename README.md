@@ -91,7 +91,7 @@ Set the following environment variables:
 
 ## To use different APIs, use below commands:
   ```
-  curl -G http://localhost:5000/api/crypto-data --data-urlencode "expected_return=1.0"
+  curl -G http://localhost:5000/api/crypto-data --data-urlencode "expected_return=>1.0"
   ```
 
   ```
