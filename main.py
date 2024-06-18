@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 import plotly.io as pio
 import plotly.graph_objs as go
 import diskcache as dc
+from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, LSTM, Input, Dropout
 import matplotlib
@@ -20,6 +21,9 @@ import os
 import redis
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
+
+from data_fetcher import calculate_macd
+from neural_network import build_lstm_model, train_model, evaluate_model, predict_next_week_prices, perform_hyperparameter_tuning
 
 # Import custom modules
 from hyperparameter_tuning import random_search  # Assuming this is a custom module for hyperparameter tuning
@@ -34,6 +38,7 @@ pd.options.display.float_format = '{:.2f}'.format
 redis_client = redis.StrictRedis(host='192.168.10.10', port=6379, db=0)
 
 # Set up logging
+logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 # Initialize InfluxDB client
@@ -93,7 +98,7 @@ def fetch_data_from_db():
             with connection.cursor() as cursor:
                 cursor.execute("SELECT * FROM crypto_coins")
                 data = cursor.fetchall()
-                redis_client.set('crypto_data', json.dumps(data))
+                redis_client.set('crypto_data', json.dumps(data), ex=3600)  # Set expiration to 1 hour
         finally:
             connection.close()
         return data
@@ -225,15 +230,7 @@ def analyze_crypto_data(df):
 
 # Function to build and train the LSTM model
 def build_and_train_model(X_train, y_train, params):
-    model = Sequential([
-        Input(shape=(X_train.shape[1], 1)),
-        LSTM(params['units'], return_sequences=True),
-        Dropout(params['dropout']),
-        LSTM(params['units'] // 2),  # Reduced units in the second LSTM layer
-        Dropout(params['dropout']),
-        Dense(1)
-    ])
-    model.compile(optimizer='adam', loss='mse')
+    model = build_lstm_model(input_shape=(X_train.shape[1], 1), units=params['units'], dropout=params['dropout'])
     model.fit(X_train, y_train, epochs=50, batch_size=32, verbose=0)
     return model
 
@@ -244,8 +241,8 @@ def perform_hyperparameter_tuning(X_train, y_train):
         'units': [50, 100, 150, 200],
         'dropout': [0.2, 0.3, 0.4, 0.5]
     }
-    model = Sequential()
-    best_params = random_search(model, param_distributions, X_train, y_train)
+    # Perform hyperparameter tuning using custom logic or external libraries
+    best_params = random_search(build_lstm_model, param_distributions, X_train, y_train)
     return best_params
 
 
@@ -255,24 +252,25 @@ def predict_crypto_prices(df):
     X_tests = {}
 
     def train_and_predict(coin):
-        coin_df = df[df['name'] == coin]
-        if len(coin_df) > 1:
-            X = coin_df.select_dtypes(include=[np.number]).drop('current_price', axis=1)
-            y = coin_df['current_price']
-            X = X.fillna(0)
-            y = y.fillna(0)
-            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-            X_train = X_train.values.reshape((X_train.shape[0], X_train.shape[1], 1))
-            X_test = X_test.values.reshape((X_test.shape[0], X_test.shape[1], 1))
-            # Perform hyperparameter tuning
-            best_params = perform_hyperparameter_tuning(X_train, y_train)
+        try:
+            coin_df = df[df['name'] == coin]
+            if len(coin_df) > 1:
+                X = coin_df.select_dtypes(include=[np.number]).drop('current_price', axis=1)
+                y = coin_df['current_price']
+                X = X.fillna(0)
+                y = y.fillna(0)
+                X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+                X_train = X_train.values.reshape((X_train.shape[0], X_train.shape[1], 1))
+                X_test = X_test.values.reshape((X_test.shape[0], X_test.shape[1], 1))
 
-            # Build and train model with the best parameters
-            model = build_and_train_model(X_train, y_train, best_params)
+                best_params = perform_hyperparameter_tuning(X_train, y_train)
 
-            # Predict prices
-            predictions[coin] = model.predict(X_test).flatten().tolist()
-            X_tests[coin] = X_test
+                model = train_model(X_train, y_train, units=best_params['units'], dropout=best_params['dropout'])
+
+                predictions[coin] = model.predict(X_test).flatten().tolist()
+                X_tests[coin] = X_test
+        except Exception as e:
+            logging.error(f"Error in train_and_predict for {coin}: {str(e)}")
 
     with ThreadPoolExecutor() as executor:
         executor.map(train_and_predict, df['name'].unique())
@@ -292,25 +290,40 @@ def fetch_historical_data(symbol, start_date, end_date):
 
 def preprocess_data(df):
     try:
-        # Example: Calculate technical indicators (SMA, EMA, RSI, etc.)
+        # Calculate technical indicators
         df['SMA_20'] = df['Close'].rolling(window=20).mean()
         df['EMA_10'] = df['Close'].ewm(span=10, adjust=False).mean()
-        # Add more features as needed
+        df['RSI'] = calculate_rsi(df['Close'], 14)  # RSI calculation
+        df['MACD'], df['MACD_signal'] = calculate_macd(df['Close'])
 
-        # Drop NaN values if any
+        # Drop NaN values
         df.dropna(inplace=True)
 
-        # Scale numerical features if required (using MinMaxScaler or StandardScaler)
-        # Example:
-        # from sklearn.preprocessing import MinMaxScaler
-        # scaler = MinMaxScaler()
-        # df_scaled = scaler.fit_transform(df[['Close', 'SMA_20', 'EMA_10']])
-        # df[['Close', 'SMA_20', 'EMA_10']] = df_scaled
+        # Scale numerical features
+        scaler = MinMaxScaler()
+        scaled_features = scaler.fit_transform(df[['Close', 'SMA_20', 'EMA_10', 'RSI', 'MACD', 'MACD_signal']])
+        df[['Close', 'SMA_20', 'EMA_10', 'RSI', 'MACD', 'MACD_signal']] = scaled_features
 
         return df
     except Exception as e:
         logging.error(f"Error preprocessing data: {str(e)}")
         return pd.DataFrame()
+
+
+def calculate_macd(series):
+    ema_12 = series.ewm(span=12, adjust=False).mean()
+    ema_26 = series.ewm(span=26, adjust=False).mean()
+    macd = ema_12 - ema_26
+    macd_signal = macd.ewm(span=9, adjust=False).mean()
+    return macd, macd_signal
+
+
+def calculate_rsi(series, period):
+    delta = series.diff(1)
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
 
 
 # Example function to fetch and preprocess data
@@ -334,17 +347,65 @@ def build_lstm_model(input_shape):
     return model
 
 
-def train_model(X_train, y_train, epochs=50, batch_size=32):
-    model = build_lstm_model(input_shape=(X_train.shape[1], X_train.shape[2]))
-    model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0)
-    return model
+def train_model(X_train, y_train, units=50, dropout=0.2, epochs=50, batch_size=32):
+    """
+    Train an LSTM model on the given training data.
+
+    Parameters:
+        X_train (numpy.ndarray): Input features for training.
+        y_train (numpy.ndarray): Target variable for training.
+        units (int): Number of units/neurons in LSTM layers (default is 50).
+        dropout (float): Dropout rate between LSTM layers (default is 0.2).
+        epochs (int): Number of training epochs (default is 50).
+        batch_size (int): Batch size for training (default is 32).
+
+    Returns:
+        tensorflow.keras.models.Sequential or None: Trained LSTM model if successful, None if an error occurs.
+    """
+    try:
+        model = build_lstm_model(input_shape=(X_train.shape[1], X_train.shape[2]), units=units, dropout=dropout)
+        logging.info(f"Training LSTM model with units={units}, dropout={dropout}, epochs={epochs}, batch_size={batch_size}")
+        model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0)
+        logging.info("Model training completed successfully.")
+        return model
+    except Exception as e:
+        logging.error(f"Error occurred during model training: {str(e)}")
+        return None
 
 
 def evaluate_model(model, X_test, y_test):
-    y_pred = model.predict(X_test)
-    mse = mean_squared_error(y_test, y_pred)
-    mae = mean_absolute_error(y_test, y_pred)
-    return mse, mae
+    """
+    Evaluate the performance of a trained LSTM model using mean squared error (MSE) and mean absolute error (MAE).
+
+    Parameters:
+        model (tensorflow.keras.models.Sequential): Trained LSTM model.
+        X_test (numpy.ndarray): Input features for testing.
+        y_test (numpy.ndarray): Target variable for testing.
+
+    Returns:
+        float, float: Mean squared error (MSE) and mean absolute error (MAE) of the model predictions.
+    """
+    try:
+        y_pred = model.predict(X_test)
+        mse = mean_squared_error(y_test, y_pred)
+        mae = mean_absolute_error(y_test, y_pred)
+        return mse, mae
+    except Exception as e:
+        logging.error(f"Error occurred during model evaluation: {str(e)}")
+        return None, None
+
+
+def build_stacked_lstm_model(input_shape, units=50, dropout=0.2):
+    model = Sequential()
+    model.add(LSTM(units=units, return_sequences=True, input_shape=input_shape))
+    model.add(Dropout(dropout))
+    model.add(LSTM(units=units, return_sequences=True))
+    model.add(Dropout(dropout))
+    model.add(LSTM(units=units))
+    model.add(Dropout(dropout))
+    model.add(Dense(units=1))
+    model.compile(optimizer='adam', loss='mean_squared_error')
+    return model
 
 
 def predict_next_week_prices(model, latest_data):
@@ -403,11 +464,11 @@ def index():
         crypto_df = get_crypto_data()
         if not crypto_df.empty:
             if 'current_price' not in crypto_df.columns:
-                return "API response does not contain 'current_price' column."
+                raise ValueError("API response does not contain 'current_price' column.")
             top_investments = analyze_crypto_data(crypto_df)
 
             # Sorting
-            valid_fields = ['name', 'current_price', 'expected_return', 'market_cap_rank']  # Add other fields if needed
+            valid_fields = ['name', 'current_price', 'expected_return', 'market_cap_rank']
             if sort_field not in valid_fields:
                 sort_field = 'name'
             if sort_order not in ['asc', 'desc']:
@@ -441,10 +502,10 @@ def index():
                                    sort_field=sort_field,
                                    sort_order=sort_order)
         else:
-            return "Failed to fetch crypto data from CoinGecko API."
+            raise ValueError("Failed to fetch crypto data from CoinGecko API.")
     except Exception as e:
         logging.error(f"Error in index route: {str(e)}")
-        return "An error occurred."
+        return render_template('error.html', error_message=str(e))
 
 
 # Function to add technical indicators
@@ -587,4 +648,4 @@ def server_error(e):
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', debug=True)
