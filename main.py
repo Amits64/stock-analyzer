@@ -21,12 +21,9 @@ import os
 import redis
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
-
 from data_fetcher import calculate_macd
 from neural_network import build_lstm_model, train_model, evaluate_model, predict_next_week_prices, perform_hyperparameter_tuning
-
-# Import custom modules
-from hyperparameter_tuning import random_search  # Assuming this is a custom module for hyperparameter tuning
+from hyperparameter_tuning import random_search
 
 # Set up Flask app and other configurations
 app = Flask(__name__, static_url_path='/static')
@@ -70,7 +67,6 @@ def write_to_influxdb(df, measurement):
             if col == "time":
                 point = point.time(val)
             elif isinstance(val, dict):
-                # Example: Flatten the dictionary or convert to individual fields
                 for key, value in val.items():
                     point = point.field(f"{col}_{key}", value)
             else:
@@ -81,8 +77,7 @@ def write_to_influxdb(df, measurement):
 
 
 def get_influxdb_data():
-    query = f'from(bucket:"{influxdb_bucket}") |> range(start: -7d) |> filter(fn: (r) => r["_measurement"] == ' \
-            f'"crypto_prices")'
+    query = f'from(bucket:"{influxdb_bucket}") |> range(start: -7d) |> filter(fn: (r) => r["_measurement"] == "current_price")'
     result = query_api.query_data_frame(org=influxdb_org, query=query)
     return result.set_index('time')
 
@@ -121,8 +116,6 @@ def get_crypto_data():
     logging.info("Fetched cryptocurrency data.")
     return df
 
-
-# Function to save data to MySQL database
 def save_to_mysql_database(df, table_name):
     connection = get_db_connection()
     try:
@@ -194,11 +187,10 @@ def save_to_mysql_database(df, table_name):
                     row['price_day_1'], row['price_day_2'], row['price_day_3'],
                     row['price_day_4'], row['price_day_5'], row['price_day_6'], row['price_day_7']
                 ))
-        connection.commit()
+            connection.commit()
+            logging.info(f"Data saved to MySQL table: {table_name}")
     finally:
         connection.close()
-    # Write to InfluxDB
-    write_to_influxdb(df, table_name)
 
 
 # Function to fetch filtered cryptocurrency data
@@ -455,6 +447,10 @@ def evaluate_model_performance(y_true, y_pred):
     return mae, mse, r2
 
 
+def process_data_update():
+    return None
+
+
 # Flask route for the index page
 @app.route('/')
 def index():
@@ -514,7 +510,6 @@ def add_technical_indicators(df):
     return df
 
 
-# Route for displaying candlestick graph for a cryptocurrency
 # Route for displaying candlestick graph for a cryptocurrency
 @app.route('/candlestick/<symbol>')
 def show_candlestick(symbol):
