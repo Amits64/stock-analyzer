@@ -22,4 +22,5 @@ packaging
 zipp
 future
 platformdirs
-influx-client
+influxdb-client
+async-timeout
