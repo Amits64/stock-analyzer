@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
-RUN pip install -r requirements.txt
+RUN pip install --ignore-installed -r requirements.txt
 
 # Stage 2: Production Stage
 FROM tensorflow/tensorflow:latest-gpu
