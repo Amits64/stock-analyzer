@@ -23,13 +23,15 @@ FROM tensorflow/tensorflow:latest-gpu
 WORKDIR /app
 
 # Copy the built artifacts from the build stage
-COPY --from=build-stage /app /app
+COPY . .
 
-# Install only runtime dependencies (if necessary)
+# Install Python dependencies again in the production stage
 RUN apt-get update && apt-get install -y \
     libgl1-mesa-glx \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --ignore-installed -r requirements.txt
 
 # Expose the port that Flask runs on
 EXPOSE 5000
