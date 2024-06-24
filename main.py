@@ -1,3 +1,7 @@
+import threading
+import time
+from datetime import datetime, date
+import yfinance
 from flask import Flask, render_template, request, send_from_directory, jsonify
 import pandas as pd
 import numpy as np
@@ -6,7 +10,9 @@ import pymysql.cursors
 import yfinance as yf
 import json
 from influxdb_client.client import query_api
-from sklearn.model_selection import train_test_split
+from pygments.lexers import go
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split, GridSearchCV
 from concurrent.futures import ThreadPoolExecutor
 import plotly.io as pio
 import plotly.graph_objs as go
@@ -19,11 +25,8 @@ import logging
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import os
 import redis
-from influxdb_client import InfluxDBClient, Point
+from influxdb_client import InfluxDBClient, Point, WriteOptions
 from influxdb_client.client.write_api import SYNCHRONOUS
-from data_fetcher import calculate_macd
-from neural_network import build_lstm_model, train_model, evaluate_model, predict_next_week_prices, perform_hyperparameter_tuning
-from hyperparameter_tuning import random_search
 
 # Set up Flask app and other configurations
 app = Flask(__name__, static_url_path='/static')
@@ -35,30 +38,26 @@ pd.options.display.float_format = '{:.2f}'.format
 redis_client = redis.StrictRedis(host='192.168.10.10', port=6379, db=0)
 
 # Set up logging
-logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Initialize InfluxDB client
 influxdb_url = "http://192.168.10.10:8086"
-influxdb_token = "9R592h_lq35-3DuWguaSiueHit64JwwpIinsUyANTvxqBGp8vBN8pL6smtwMFjgmVJbglqYkTjuzU1e0_qOUtA=="
+influxdb_token = "FiAmaj78_PagPTglX8Zth2mcH4-5ZehRpFh5pX3uET2e2QUlBTtPqZJY74_jnhj7eHTnMKZgZlJ-E-kyrP-sQA=="
 influxdb_org = "DevOps-Tech"
 influxdb_bucket = "crypto_coins_bkt"
 influxdb_client = InfluxDBClient(url=influxdb_url, token=influxdb_token, org=influxdb_org)
 write_api = influxdb_client.write_api(write_options=SYNCHRONOUS)
 
 
-def get_db_connection():
-    return pymysql.connect(
-        host=os.getenv('MYSQL_HOST', '192.168.10.10'),
-        port=int(os.getenv('MYSQL_PORT', '3306')),
-        user=os.getenv('MYSQL_USER', 'root'),
-        password=os.getenv('MYSQL_PASSWORD', 'Kubernetes@1993'),
-        db=os.getenv('MYSQL_DB', 'crypto_coins'),
-        charset='utf8mb4',
-        cursorclass=pymysql.cursors.DictCursor
-    )
+# Custom JSON Encoder for datetime objects
+class CustomJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, (datetime, date)):
+            return obj.isoformat()
+        return super().default(obj)
 
 
+# Function to write data to InfluxDB
 def write_to_influxdb(df, measurement):
     points = []
     for index, row in df.iterrows():
@@ -77,23 +76,51 @@ def write_to_influxdb(df, measurement):
 
 
 def get_influxdb_data():
-    query = f'from(bucket:"{influxdb_bucket}") |> range(start: -7d) |> filter(fn: (r) => r["_measurement"] == "current_price")'
+    query = f'from(bucket:"{influxdb_bucket}") |> range(start: -7d) |> filter(fn: (r) => r["_measurement"] == ' \
+            f'"current_price")'
     result = query_api.query_data_frame(org=influxdb_org, query=query)
     return result.set_index('time')
+
+
+# Check if the key exists and get its value
+cached_data = redis_client.get('crypto_data')
+
+# Check if data is cached
+if cached_data:
+    print("Data is cached in Redis.")
+    # Print the cached data if needed
+    # print(cached_data.decode())  # Decoding the byte data to string
+else:
+    print("Data is not cached in Redis.")
+
+
+def get_db_connection():
+    return pymysql.connect(
+        host=os.getenv('MYSQL_HOST', '192.168.10.10'),
+        port=int(os.getenv('MYSQL_PORT', '3306')),
+        user=os.getenv('MYSQL_USER', 'root'),
+        password=os.getenv('MYSQL_PASSWORD', 'Kubernetes@1993'),
+        db=os.getenv('MYSQL_DB', 'crypto_coins'),
+        charset='utf8mb4',
+        cursorclass=pymysql.cursors.DictCursor
+    )
 
 
 # Function to fetch data from database with Redis caching
 def fetch_data_from_db():
     cached_data = redis_client.get('crypto_data')
     if cached_data:
+        logging.info("Fetching data from Redis cache.")
         return json.loads(cached_data)
     else:
+        logging.info("Fetching data from MySQL database.")
         connection = get_db_connection()
         try:
             with connection.cursor() as cursor:
                 cursor.execute("SELECT * FROM crypto_coins")
                 data = cursor.fetchall()
-                redis_client.set('crypto_data', json.dumps(data), ex=3600)  # Set expiration to 1 hour
+                redis_client.set('crypto_data', json.dumps(data, cls=CustomJSONEncoder))  # Use custom encoder
+                logging.info("Caching data in Redis.")
         finally:
             connection.close()
         return data
@@ -116,6 +143,8 @@ def get_crypto_data():
     logging.info("Fetched cryptocurrency data.")
     return df
 
+
+# Function to save data to MySQL database
 def save_to_mysql_database(df, table_name):
     connection = get_db_connection()
     try:
@@ -131,7 +160,7 @@ def save_to_mysql_database(df, table_name):
                 last_updated DATETIME,
                 price_change_24h DOUBLE,
                 price_change_percentage_24h DOUBLE,
-                ath DOUBLE,
+                ath DATETIME,
                 ath_date DATE,
                 ath_change_percentage DOUBLE,
                 atl_change_percentage DOUBLE,
@@ -153,6 +182,13 @@ def save_to_mysql_database(df, table_name):
             cursor.execute(create_table_query)
 
             for index, row in df.iterrows():
+                # Convert last_updated to the correct format
+                last_updated = datetime.strptime(row['last_updated'], "%Y-%m-%dT%H:%M:%S.%fZ").strftime('%Y-%m-%d %H:%M:%S')
+
+                # Convert ath_date to the correct format
+                ath_date = datetime.strptime(row['ath_date'], "%Y-%m-%dT%H:%M:%S.%fZ").strftime('%Y-%m-%d')
+
+                # Insert query
                 insert_query = f"""
                     INSERT INTO {table_name} (name, id, current_price, expected_return, high_24h, low_24h,
                                               last_updated, price_change_24h, price_change_percentage_24h,
@@ -179,9 +215,9 @@ def save_to_mysql_database(df, table_name):
                 """
                 cursor.execute(insert_query, (
                     row['name'], row['id'], row['current_price'], row['expected_return'],
-                    row['high_24h'], row['low_24h'], row['last_updated'],
+                    row['high_24h'], row['low_24h'], last_updated,
                     row['price_change_24h'], row['price_change_percentage_24h'],
-                    row['ath'], row['ath_date'], row['ath_change_percentage'], row['atl_change_percentage'],
+                    row['ath'], ath_date, row['ath_change_percentage'], row['atl_change_percentage'],
                     row['market_cap'], row['market_cap_change_24h'], row['market_cap_change_percentage_24h'],
                     row['market_cap_rank'], row['circulating_supply'], row['symbol'],
                     row['price_day_1'], row['price_day_2'], row['price_day_3'],
@@ -189,8 +225,12 @@ def save_to_mysql_database(df, table_name):
                 ))
             connection.commit()
             logging.info(f"Data saved to MySQL table: {table_name}")
+    except Exception as e:
+        logging.error(f"Error saving data to MySQL: {str(e)}")
     finally:
         connection.close()
+    # Write to InfluxDB
+    write_to_influxdb(df, table_name)
 
 
 # Function to fetch filtered cryptocurrency data
@@ -212,6 +252,7 @@ def analyze_crypto_data(df):
     else:
         logging.warning("Column 'price_change_percentage_24h' is missing in the API response.")
         df["expected_return"] = 1  # Default to 1 if the column is missing
+
     for day in range(1, 8):
         df[f"price_day_{day}"] = df["current_price"] * (df["expected_return"] ** day)
 
@@ -222,191 +263,46 @@ def analyze_crypto_data(df):
 
 # Function to build and train the LSTM model
 def build_and_train_model(X_train, y_train, params):
-    model = build_lstm_model(input_shape=(X_train.shape[1], 1), units=params['units'], dropout=params['dropout'])
+    model = Sequential([
+        Input(shape=(X_train.shape[1], 1)),
+        LSTM(params['units'], return_sequences=True),
+        Dropout(params['dropout']),
+        LSTM(params['units']),
+        Dropout(params['dropout']),
+        Dense(1)
+    ])
+    model.compile(optimizer='adam', loss='mse')
     model.fit(X_train, y_train, epochs=50, batch_size=32, verbose=0)
     return model
 
 
-# Function to perform hyperparameter tuning
+# Function to perform hyperparameter tuning with GridSearchCV
 def perform_hyperparameter_tuning(X_train, y_train):
-    param_distributions = {
-        'units': [50, 100, 150, 200],
-        'dropout': [0.2, 0.3, 0.4, 0.5]
+    param_grid = {
+        'n_estimators': [50, 100, 150],
+        'max_depth': [None, 10, 20],
+        'min_samples_split': [2, 5, 10],
+        'min_samples_leaf': [1, 2, 4]
     }
-    # Perform hyperparameter tuning using custom logic or external libraries
-    best_params = random_search(build_lstm_model, param_distributions, X_train, y_train)
+    model = RandomForestRegressor(random_state=42)
+    grid_search = GridSearchCV(estimator=model, param_grid=param_grid, cv=5, n_jobs=-1, scoring='neg_mean_squared_error')
+    grid_search.fit(X_train, y_train)
+    best_params = grid_search.best_params_
     return best_params
 
 
-# Function to predict crypto prices
-def predict_crypto_prices(df):
-    predictions = {}
-    X_tests = {}
-
-    def train_and_predict(coin):
-        try:
-            coin_df = df[df['name'] == coin]
-            if len(coin_df) > 1:
-                X = coin_df.select_dtypes(include=[np.number]).drop('current_price', axis=1)
-                y = coin_df['current_price']
-                X = X.fillna(0)
-                y = y.fillna(0)
-                X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-                X_train = X_train.values.reshape((X_train.shape[0], X_train.shape[1], 1))
-                X_test = X_test.values.reshape((X_test.shape[0], X_test.shape[1], 1))
-
-                best_params = perform_hyperparameter_tuning(X_train, y_train)
-
-                model = train_model(X_train, y_train, units=best_params['units'], dropout=best_params['dropout'])
-
-                predictions[coin] = model.predict(X_test).flatten().tolist()
-                X_tests[coin] = X_test
-        except Exception as e:
-            logging.error(f"Error in train_and_predict for {coin}: {str(e)}")
-
-    with ThreadPoolExecutor() as executor:
-        executor.map(train_and_predict, df['name'].unique())
-
-    return predictions, X_tests
+# Function to normalize and scale data
+def normalize_and_scale_data(df):
+    scaler = MinMaxScaler()
+    df_scaled = df.copy()
+    df_scaled[df_scaled.columns] = scaler.fit_transform(df_scaled[df_scaled.columns])
+    return df_scaled
 
 
-def fetch_historical_data(symbol, start_date, end_date):
-    try:
-        # Fetch historical data using Yahoo Finance API
-        df = yf.download(symbol, start=start_date, end=end_date, interval='1d')
-        return df
-    except Exception as e:
-        logging.error(f"Error fetching historical data for {symbol}: {str(e)}")
-        return pd.DataFrame()  # Return empty DataFrame on error
-
-
-def preprocess_data(df):
-    try:
-        # Calculate technical indicators
-        df['SMA_20'] = df['Close'].rolling(window=20).mean()
-        df['EMA_10'] = df['Close'].ewm(span=10, adjust=False).mean()
-        df['RSI'] = calculate_rsi(df['Close'], 14)  # RSI calculation
-        df['MACD'], df['MACD_signal'] = calculate_macd(df['Close'])
-
-        # Drop NaN values
-        df.dropna(inplace=True)
-
-        # Scale numerical features
-        scaler = MinMaxScaler()
-        scaled_features = scaler.fit_transform(df[['Close', 'SMA_20', 'EMA_10', 'RSI', 'MACD', 'MACD_signal']])
-        df[['Close', 'SMA_20', 'EMA_10', 'RSI', 'MACD', 'MACD_signal']] = scaled_features
-
-        return df
-    except Exception as e:
-        logging.error(f"Error preprocessing data: {str(e)}")
-        return pd.DataFrame()
-
-
-def calculate_macd(series):
-    ema_12 = series.ewm(span=12, adjust=False).mean()
-    ema_26 = series.ewm(span=26, adjust=False).mean()
-    macd = ema_12 - ema_26
-    macd_signal = macd.ewm(span=9, adjust=False).mean()
-    return macd, macd_signal
-
-
-def calculate_rsi(series, period):
-    delta = series.diff(1)
-    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
-
-
-# Example function to fetch and preprocess data
-def fetch_and_preprocess_data(symbol, start_date, end_date):
-    df = fetch_historical_data(symbol, start_date, end_date)
-    if not df.empty:
-        df_preprocessed = preprocess_data(df)
-        return df_preprocessed
-    else:
-        return pd.DataFrame()
-
-
-def build_lstm_model(input_shape):
-    model = Sequential()
-    model.add(LSTM(units=50, return_sequences=True, input_shape=input_shape))
-    model.add(Dropout(0.2))
-    model.add(LSTM(units=50))
-    model.add(Dropout(0.2))
-    model.add(Dense(units=1))  # Output layer
-    model.compile(optimizer='adam', loss='mean_squared_error')
-    return model
-
-
-def train_model(X_train, y_train, units=50, dropout=0.2, epochs=50, batch_size=32):
-    """
-    Train an LSTM model on the given training data.
-
-    Parameters:
-        X_train (numpy.ndarray): Input features for training.
-        y_train (numpy.ndarray): Target variable for training.
-        units (int): Number of units/neurons in LSTM layers (default is 50).
-        dropout (float): Dropout rate between LSTM layers (default is 0.2).
-        epochs (int): Number of training epochs (default is 50).
-        batch_size (int): Batch size for training (default is 32).
-
-    Returns:
-        tensorflow.keras.models.Sequential or None: Trained LSTM model if successful, None if an error occurs.
-    """
-    try:
-        model = build_lstm_model(input_shape=(X_train.shape[1], X_train.shape[2]), units=units, dropout=dropout)
-        logging.info(f"Training LSTM model with units={units}, dropout={dropout}, epochs={epochs}, batch_size={batch_size}")
-        model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0)
-        logging.info("Model training completed successfully.")
-        return model
-    except Exception as e:
-        logging.error(f"Error occurred during model training: {str(e)}")
-        return None
-
-
-def evaluate_model(model, X_test, y_test):
-    """
-    Evaluate the performance of a trained LSTM model using mean squared error (MSE) and mean absolute error (MAE).
-
-    Parameters:
-        model (tensorflow.keras.models.Sequential): Trained LSTM model.
-        X_test (numpy.ndarray): Input features for testing.
-        y_test (numpy.ndarray): Target variable for testing.
-
-    Returns:
-        float, float: Mean squared error (MSE) and mean absolute error (MAE) of the model predictions.
-    """
-    try:
-        y_pred = model.predict(X_test)
-        mse = mean_squared_error(y_test, y_pred)
-        mae = mean_absolute_error(y_test, y_pred)
-        return mse, mae
-    except Exception as e:
-        logging.error(f"Error occurred during model evaluation: {str(e)}")
-        return None, None
-
-
-def build_stacked_lstm_model(input_shape, units=50, dropout=0.2):
-    model = Sequential()
-    model.add(LSTM(units=units, return_sequences=True, input_shape=input_shape))
-    model.add(Dropout(dropout))
-    model.add(LSTM(units=units, return_sequences=True))
-    model.add(Dropout(dropout))
-    model.add(LSTM(units=units))
-    model.add(Dropout(dropout))
-    model.add(Dense(units=1))
-    model.compile(optimizer='adam', loss='mean_squared_error')
-    return model
-
-
-def predict_next_week_prices(model, latest_data):
-    # Assuming latest_data is the preprocessed DataFrame containing recent data
-    # Prepare input for prediction (reshape if using LSTM)
-    X = latest_data.values.reshape((1, latest_data.shape[0], latest_data.shape[1]))
-    # Predict next week's prices
-    predicted_prices = model.predict(X)
-    return predicted_prices.flatten()[0]  # Return the predicted price
+# Function to handle missing data
+def handle_missing_data(df):
+    df_filled = df.fillna(method='ffill').fillna(method='bfill')
+    return df_filled
 
 
 # Function to save predictions to MySQL
@@ -428,6 +324,76 @@ def save_predictions_to_mysql(predictions):
         connection.close()
 
 
+# Function to fetch data from MySQL database
+def fetch_data_from_mysql():
+    connection = get_db_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT * FROM crypto_coins")
+            data = cursor.fetchall()
+    finally:
+        connection.close()
+    return data
+
+
+# Function to predict crypto prices and calculate evaluation metrics
+def predict_crypto_prices(df):
+    predictions = {}
+    evaluation_metrics = {}
+
+    def train_and_predict(coin):
+        coin_df = df[df['name'] == coin]
+        if len(coin_df) > 1:
+            X = coin_df.select_dtypes(include=[np.number]).drop('current_price', axis=1)
+            y = coin_df['current_price']
+            X = X.fillna(0)
+            y = y.fillna(0)
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+            X_train = X_train.values.reshape((X_train.shape[0], X_train.shape[1], 1))
+            X_test = X_test.values.reshape((X_test.shape[0], X_test.shape[1], 1))
+            # Perform hyperparameter tuning
+            best_params = perform_hyperparameter_tuning(X_train, y_train)
+
+            # Build and train model with the best parameters
+            model = build_and_train_model(X_train, y_train, best_params)
+
+            # Predict prices
+            predictions[coin] = model.predict(X_test).flatten().tolist()
+
+            # Calculate evaluation metrics
+            mae, mse, r2 = evaluate_model_performance(y_test, predictions[coin])
+            evaluation_metrics[coin] = {
+                'MAE': mae,
+                'MSE': mse,
+                'R2': r2
+            }
+
+    with ThreadPoolExecutor() as executor:
+        executor.map(train_and_predict, df['name'].unique())
+
+    return predictions, evaluation_metrics
+
+
+# Function to fetch data from InfluxDB
+def fetch_data_from_influxdb(coin_name):
+    query_api = influxdb_client.query_api()
+    query = f'from(bucket: "{influxdb_bucket}") |> range(start: -1d) |> filter(fn: (r) => r["_measurement"] == "{coin_name}")'
+    result = query_api.query(org=influxdb_org, query=query)
+    return result
+
+
+# Function to fetch price predictions from MySQL
+def fetch_price_predictions():
+    connection = get_db_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT * FROM price_predictions")
+            data = cursor.fetchall()
+    finally:
+        connection.close()
+    return data
+
+
 # Function to save data to JSON file
 def save_to_json_file(data, filename):
     with open(filename, 'w') as file:
@@ -447,61 +413,104 @@ def evaluate_model_performance(y_true, y_pred):
     return mae, mse, r2
 
 
-def process_data_update():
-    return None
+# Scheduled data update thread function
+def scheduled_data_update():
+    while True:
+        try:
+            # Fetch crypto data and perform analysis
+            crypto_df = get_crypto_data()
+            analyzed_data = analyze_crypto_data(crypto_df)
+
+            # Predict prices and save predictions
+            predictions, _ = predict_crypto_prices(analyzed_data)
+            save_predictions_to_mysql(predictions)
+
+            # Render the template with updated data
+            with app.app_context():
+                rendered_template = render_template('index.html',
+                                                    top_investments=analyzed_data.to_dict(orient='records'),
+                                                    prediction_dict=predictions)
+                cache.set('index_content', rendered_template)
+
+        except Exception as e:
+            logging.error(f"Error in scheduled data update: {str(e)}")
+
+        time.sleep(120)
+
+
+# Start the scheduled data update in a separate thread
+scheduler_thread = threading.Thread(target=scheduled_data_update)
+scheduler_thread.start()
 
 
 # Flask route for the index page
 @app.route('/')
 def index():
     try:
-        sort_field = request.args.get('sort_field', 'name')
-        sort_order = request.args.get('sort_order', 'asc')
-        crypto_df = get_crypto_data()
-        if not crypto_df.empty:
-            if 'current_price' not in crypto_df.columns:
-                raise ValueError("API response does not contain 'current_price' column.")
-            top_investments = analyze_crypto_data(crypto_df)
+        sort_field = request.args.get('sort_field', 'expected_return')
+        sort_order = request.args.get('sort_order', 'desc')
 
-            # Sorting
-            valid_fields = ['name', 'current_price', 'expected_return', 'market_cap_rank']
-            if sort_field not in valid_fields:
-                sort_field = 'name'
-            if sort_order not in ['asc', 'desc']:
-                sort_order = 'asc'
-            top_investments.sort_values(by=sort_field, ascending=(sort_order == 'asc'), inplace=True)
+        # Debugging print to check request parameters
+        print(f"Request args: {request.args}")
 
-            predictions, _ = predict_crypto_prices(top_investments)
-            for coin, prediction in predictions.items():
-                if not isinstance(prediction, list):
-                    predictions[coin] = prediction.tolist()
-            save_predictions_to_mysql(predictions)
-            raw_data_filename = 'raw_data.json'
-            save_to_json_file(top_investments.to_dict(orient='records'), raw_data_filename)
-            next_week_predictions = {}
-            for coin in top_investments['name'].unique():
-                next_week_predictions[coin] = predict_next_week_price(coin)
-            page = request.args.get('page', 1, type=int)
-            per_page = 100
-            total = len(top_investments)
-            start = (page - 1) * per_page
-            end = start + per_page
-            paginated_top_investments = top_investments[start:end]
-            return render_template('index.html',
-                                   top_investments=paginated_top_investments.to_dict(orient='records'),
-                                   prediction_dict=predictions,
-                                   next_week_predictions=next_week_predictions,
-                                   raw_data_filename=raw_data_filename,
-                                   page=page,
-                                   total=total,
-                                   per_page=per_page,
-                                   sort_field=sort_field,
-                                   sort_order=sort_order)
-        else:
-            raise ValueError("Failed to fetch crypto data from CoinGecko API.")
+        # Fetch data directly from MySQL database as a DataFrame
+        top_investments = pd.DataFrame(fetch_data_from_db())
+
+        if top_investments.empty:
+            return "Failed to fetch crypto data from the database."
+
+        # Handling 'page' parameter
+        page = request.args.get('page', 1, type=int)
+
+        # Sorting
+        valid_fields = ['name', 'current_price', 'expected_return', 'market_cap_rank']
+        if sort_field not in valid_fields:
+            sort_field = 'name'
+        if sort_order not in ['asc', 'desc']:
+            sort_order = 'asc'
+
+        top_investments.sort_values(by=sort_field, ascending=(sort_order == 'asc'), inplace=True)
+
+        # Predict prices and evaluation metrics
+        predictions, evaluation_metrics = predict_crypto_prices(top_investments)
+        save_predictions_to_mysql(predictions)
+
+        # Calculate average metrics for reporting
+        average_mae = np.mean([metrics['MAE'] for metrics in evaluation_metrics.values()])
+        average_mse = np.mean([metrics['MSE'] for metrics in evaluation_metrics.values()])
+        average_r2 = np.mean([metrics['R2'] for metrics in evaluation_metrics.values()])
+
+        raw_data_filename = 'raw_data.json'
+        save_to_json_file(top_investments.to_dict(orient='records'), raw_data_filename)
+
+        next_week_predictions = {}
+        for coin in top_investments['name'].unique():
+            next_week_predictions[coin] = predict_next_week_price(coin)
+
+        per_page = 100
+        total = len(top_investments)
+        start = (page - 1) * per_page
+        end = start + per_page
+        paginated_top_investments = top_investments[start:end]
+
+        return render_template('index.html',
+                               top_investments=paginated_top_investments.to_dict(orient='records'),
+                               prediction_dict=predictions,
+                               next_week_predictions=next_week_predictions,
+                               raw_data_filename=raw_data_filename,
+                               page=page,
+                               total=total,
+                               per_page=per_page,
+                               sort_field=sort_field,
+                               sort_order=sort_order,
+                               evaluation_metrics=evaluation_metrics,
+                               average_mae=average_mae,
+                               average_mse=average_mse,
+                               average_r2=average_r2)
+
     except Exception as e:
         logging.error(f"Error in index route: {str(e)}")
-        return render_template('error.html', error_message=str(e))
+        return "An error occurred. Please try again later.", 500
 
 
 # Function to add technical indicators
@@ -526,8 +535,24 @@ def show_candlestick(symbol):
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
 
+        if not start_date or not end_date:
+            # Default period if no dates provided
+            period = '1mo'
+            interval = '1d'
+        else:
+            # Custom period based on the dates provided
+            period = None  # No period when specific date range is provided
+            interval = '1d'
+
         # Fetch historical data for the cryptocurrency using ticker
-        df = fetch_historical_data(ticker, start_date, end_date)
+        if period:
+            df = yf.download(ticker, period=period, interval=interval)
+        else:
+            df = yf.download(ticker, start=start_date, end=end_date, interval=interval)
+
+        # Check if the dataframe is empty (which means no data was fetched)
+        if df.empty:
+            raise ValueError(f"No data found for symbol: {symbol}")
 
         # Add technical indicators (e.g., SMA) to the dataframe
         df = add_technical_indicators(df)
@@ -574,73 +599,62 @@ def show_candlestick(symbol):
         # Render the HTML template with the candlestick graph
         return render_template('candlestick.html', symbol=symbol, graph_html=graph_html)
 
+    except yfinance.YFPricesMissingError as e:
+        # Handle Yahoo Finance specific error
+        error_message = f"Yahoo Finance error: {str(e)}"
+        logging.error(error_message)
+        return render_template('error.html', error_message=error_message)
+
+    except ValueError as e:
+        # Handle specific errors related to data not found or other expected issues
+        error_message = f"Error: {str(e)}"
+        logging.error(error_message)
+        return render_template('error.html', error_message=error_message)
+
     except Exception as e:
-        # Handle errors gracefully
-        logging.error(f"Error in show_candlestick route for symbol {symbol}: {str(e)}")
-        return render_template('error.html', error_message=str(e))
+        # Fetch the list of available coins from the database
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT name, symbol FROM crypto_coins")
+                available_coins = cursor.fetchall()
+        except Exception as db_error:
+            logging.error(f"Database error: {str(db_error)}")
+            available_coins = []
+
+        # Handle unexpected errors gracefully
+        error_message = f"Error: {str(e)}"
+        logging.error(error_message)
+        return render_template('error.html', error_message=error_message, available_coins=available_coins)
 
     finally:
-        connection.close()
+        if 'connection' in locals() and connection.open:
+            connection.close()
 
 
-# Flask route for API to fetch historical price data
-@app.route('/api/historical-price', methods=['GET'])
-def get_historical_price_data_api():
-    try:
-        symbol = request.args.get('symbol')
-        start_date = request.args.get('start_date')
-        end_date = request.args.get('end_date')
-
-        # Fetch historical data from a data source (e.g., Yahoo Finance)
-        if symbol and start_date and end_date:
-            df = fetch_historical_data(symbol, start_date, end_date)
-
-            # Convert DataFrame to JSON format
-            data_json = df.reset_index().to_json(orient='records')
-
-            return jsonify(data_json)
-
-        else:
-            return jsonify({'error': 'Missing parameters: symbol, start_date, end_date'}), 400
-
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+# Add a route to serve static files, if necessary
+@app.route('/static/<path:filename>')
+def serve_static(filename):
+    return send_from_directory(app.static_folder, filename)
 
 
-# Function to fetch available cryptocurrencies from MySQL
-def fetch_available_cryptocurrencies():
+# Function to create price predictions table
+def create_price_predictions_table():
     connection = get_db_connection()
     try:
         with connection.cursor() as cursor:
-            cursor.execute("SELECT DISTINCT name FROM crypto_coins ORDER BY name")
-            available_coins = [row['name'] for row in cursor.fetchall()]
+            create_table_query = """
+                CREATE TABLE IF NOT EXISTS price_predictions (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    cryptocurrency VARCHAR(255),
+                    predicted_price DOUBLE
+                )
+            """
+            cursor.execute(create_table_query)
+        connection.commit()
     finally:
         connection.close()
-    return available_coins
 
 
-# Flask route for the candlestick chart
-@app.route('/candlestick_chart')
-def candlestick_chart():
-    try:
-        available_coins = fetch_available_cryptocurrencies()
-        return render_template('candlestick_chart.html', available_coins=available_coins)
-    except Exception as e:
-        logging.error(f"Error in candlestick_chart route: {str(e)}")
-        return "An error occurred."
-
-
-# Flask route for handling errors
-@app.errorhandler(404)
-def page_not_found(e):
-    return render_template('404.html'), 404
-
-
-# Flask route for handling server errors
-@app.errorhandler(500)
-def server_error(e):
-    return render_template('500.html'), 500
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
+    create_price_predictions_table()  # Ensure the table is created before running the app
     app.run(host='0.0.0.0', debug=True)
