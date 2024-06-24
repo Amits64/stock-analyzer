@@ -20,6 +20,11 @@
             color: #4CAF50;
             margin-top: 50px;
         }
+        .sorting-container {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
         .table-container {
             width: 100%;
             overflow-x: auto;
@@ -63,6 +68,18 @@
             padding: 12px 20px;
             border: 1px solid #ddd;
             margin-bottom: 12px;
+        }
+        button {
+            height: 40px;
+            font-size: 16px;
+            padding: 0 20px;
+            border: none;
+            background-color: #4CAF50;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
         }
         .pagination {
             display: flex;
@@ -118,18 +135,16 @@
 <body>
     <h1>Top Cryptocurrencies for Investment</h1>
     <div class="sorting-container">
-        <form method="GET" action="/">
+        <form id="sortForm" method="GET" action="/">
             <label for="sort_field">Sort by:</label>
             <select id="sort_field" name="sort_field">
                 <option value="name" {% if sort_field == 'name' %}selected{% endif %}>Name</option>
-                <option value="id" {% if sort_field == 'id' %}selected{% endif %}>ID</option>
                 <option value="current_price" {% if sort_field == 'current_price' %}selected{% endif %}>Current Price</option>
                 <option value="expected_return" {% if sort_field == 'expected_return' %}selected{% endif %}>Expected Return</option>
                 <option value="high_24h" {% if sort_field == 'high_24h' %}selected{% endif %}>High 24h</option>
                 <option value="low_24h" {% if sort_field == 'low_24h' %}selected{% endif %}>Low 24h</option>
                 <option value="market_cap" {% if sort_field == 'market_cap' %}selected{% endif %}>Market Cap</option>
                 <option value="market_cap_rank" {% if sort_field == 'market_cap_rank' %}selected{% endif %}>Market Cap Rank</option>
-                <!-- Add other fields as needed -->
             </select>
             <select id="sort_order" name="sort_order">
                 <option value="asc" {% if sort_order == 'asc' %}selected{% endif %}>Ascending</option>
@@ -143,52 +158,65 @@
             <thead>
                 <tr>
                     <th>Name</th>
-                    <th>ID</th>
                     <th>Current Price (₹)</th>
                     <th>Expected Return (₹)</th>
                     <th>High 24h (₹)</th>
                     <th>Low 24h (₹)</th>
-                    <th>Price Day 1 (₹)</th>
-                    <th>Price Day 2 (₹)</th>
                     <th>Last Updated</th>
                     <th>Price Change 24h</th>
                     <th>Price Change % 24h</th>
                     <th>ATH (₹)</th>
                     <th>ATH Date</th>
                     <th>ATH Change %</th>
+                    <th>ATL (₹)</th>
+                    <th>ATL Date</th>
                     <th>ATL Change %</th>
                     <th>Market Cap (₹)</th>
                     <th>Market Cap Change 24h</th>
                     <th>Market Cap Change % 24h</th>
                     <th>Market Cap Rank</th>
                     <th>Circulating Supply</th>
+                    <th>Price Day 1 (₹)</th>
+                    <th>Price Day 2 (₹)</th>
+                    <th>Price Day 3 (₹)</th>
+                    <th>Price Day 4 (₹)</th>
+                    <th>Price Day 5 (₹)</th>
+                    <th>Price Day 6 (₹)</th>
+                    <th>Price Day 7 (₹)</th>
                     <th>Sentiment</th>
                     <th>Candlestick Graph</th>
                 </tr>
             </thead>
-            <tbody>
+            <tbody id="cryptoTableBody">
+                <!-- Table rows will be populated dynamically -->
                 {% for coin in top_investments %}
                     <tr>
                         <td>{{ coin["name"] }}</td>
-                        <td>{{ coin["id"] }}</td>
                         <td>₹ {{ coin["current_price"] }}</td>
                         <td>₹ {{ coin["expected_return"] }}</td>
                         <td>₹ {{ coin["high_24h"] }}</td>
                         <td>₹ {{ coin["low_24h"] }}</td>
-                        <td>₹ {{ coin["price_day_1"] }}</td>
-                        <td>₹ {{ coin["price_day_2"] }}</td>
                         <td>{{ coin["last_updated"] }}</td>
                         <td>{{ coin["price_change_24h"] }}</td>
                         <td>{{ coin["price_change_percentage_24h"] }}%</td>
                         <td>₹ {{ coin["ath"] }}</td>
                         <td>{{ coin["ath_date"] }}</td>
                         <td>{{ coin["ath_change_percentage"] }}%</td>
+                        <td>₹ {{ coin["atl"] }}</td>
+                        <td>{{ coin["atl_date"] }}</td>
                         <td>{{ coin["atl_change_percentage"] }}%</td>
                         <td>₹ {{ coin["market_cap"] }}</td>
                         <td>{{ coin["market_cap_change_24h"] }}</td>
                         <td>{{ coin["market_cap_change_percentage_24h"] }}%</td>
                         <td>{{ coin["market_cap_rank"] }}</td>
                         <td>{{ coin["circulating_supply"] }}</td>
+                        <td>₹ {{ coin["price_day_1"] }}</td>
+                        <td>₹ {{ coin["price_day_2"] }}</td>
+                        <td>₹ {{ coin["price_day_3"] }}</td>
+                        <td>₹ {{ coin["price_day_4"] }}</td>
+                        <td>₹ {{ coin["price_day_5"] }}</td>
+                        <td>₹ {{ coin["price_day_6"] }}</td>
+                        <td>₹ {{ coin["price_day_7"] }}</td>
                         <td>
                             {% if coin["sentiment"] == 'positive' %}
                                 <div class="sentiment-indicator positive" title="Positive"></div>
@@ -215,5 +243,62 @@
             <a href="/?page={{ page + 1 }}&sort_field={{ sort_field }}&sort_order={{ sort_order }}">Next &raquo;</a>
         {% endif %}
     </div>
+
+    <script>
+        // Function to fetch data from backend and update the table
+        function fetchDataAndUpdate() {
+            fetch('/fetch_data') // Replace with your backend endpoint that fetches data from Redis
+                .then(response => response.json())
+                .then(data => {
+                    const cryptoTableBody = document.getElementById('cryptoTableBody');
+                    cryptoTableBody.innerHTML = ''; // Clear existing table rows
+                    data.top_investments.forEach(coin => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${coin.name}</td>
+                            <td>₹ ${coin.current_price}</td>
+                            <td>₹ ${coin.expected_return}</td>
+                            <td>₹ ${coin.high_24h}</td>
+                            <td>₹ ${coin.low_24h}</td>
+                            <td>${coin.last_updated}</td>
+                            <td>${coin.price_change_24h}</td>
+                            <td>${coin.price_change_percentage_24h}%</td>
+                            <td>₹ ${coin.ath}</td>
+                            <td>${coin.ath_date}</td>
+                            <td>${coin.ath_change_percentage}%</td>
+                            <td>₹ ${coin.atl}</td>
+                            <td>${coin.atl_date}</td>
+                            <td>${coin.atl_change_percentage}%</td>
+                            <td>₹ ${coin.market_cap}</td>
+                            <td>${coin.market_cap_change_24h}</td>
+                            <td>${coin.market_cap_change_percentage_24h}%</td>
+                            <td>${coin.market_cap_rank}</td>
+                            <td>${coin.circulating_supply}</td>
+                            <td>₹ ${coin.price_day_1}</td>
+                            <td>₹ ${coin.price_day_2}</td>
+                            <td>₹ ${coin.price_day_3}</td>
+                            <td>₹ ${coin.price_day_4}</td>
+                            <td>₹ ${coin.price_day_5}</td>
+                            <td>₹ ${coin.price_day_6}</td>
+                            <td>₹ ${coin.price_day_7}</td>
+                            <td>
+                                ${coin.sentiment === 'positive' ? '<div class="sentiment-indicator positive" title="Positive"></div>'
+                                : coin.sentiment === 'negative' ? '<div class="sentiment-indicator negative" title="Negative"></div>'
+                                : '<div class="sentiment-indicator neutral" title="Neutral"></div>'}
+                            </td>
+                            <td><a href="/candlestick/${coin.id}">View Candlestick Graph</a></td>
+                        `;
+                        cryptoTableBody.appendChild(row);
+                    });
+                })
+                .catch(error => console.error('Error fetching data:', error));
+        }
+
+        // Initial data fetch and update
+        fetchDataAndUpdate();
+
+        // Refresh data every 2 minutes (adjust as needed)
+        setInterval(fetchDataAndUpdate, 2 * 60 * 1000); // 2 minutes in milliseconds
+    </script>
 </body>
 </html>
