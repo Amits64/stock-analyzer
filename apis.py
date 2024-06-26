@@ -12,7 +12,7 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 from main import predict_next_week_price, get_filtered_crypto_data, process_data_update, logger, evaluate_model, \
-    fetch_data_from_db, save_to_mysql_database, get_crypto_data
+    fetch_data_from_db, save_to_mysql_database, get_crypto_data, random_forest_predictive_model
 import plotly.graph_objects as go
 from neural_network import train_model, build_lstm_model
 
@@ -211,6 +211,17 @@ def candlestick_chart(coin_id):
         return jsonify({'error': 'Failed to fetch candlestick chart data.'}), 500
 
 
+@app.route('/fetch_data', methods=['GET'])
+def fetch_data():
+    try:
+        # Implement your logic to fetch data here
+        data = fetch_data_from_db()  # Example function to fetch data from database
+        return jsonify({'data': data})  # Example: Return fetched data as JSON
+    except Exception as e:
+        logging.error(f"Error fetching data: {str(e)}")
+        return jsonify({'error': 'An error occurred while fetching data'}), 500
+
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
@@ -266,6 +277,27 @@ def predict():
     except Exception as e:
         logger.error(f"Error in prediction: {e}")
         return jsonify({'error': str(e)})
+
+
+@app.route('/api/crypto_data', methods=['GET'])
+def get_crypto_data():
+    data = fetch_data_from_db()
+    return jsonify(data)
+
+
+@app.route('/predict', methods=['POST'])
+def predict():
+    data = request.get_json()
+    df = pd.DataFrame(data)
+    model, mae, mse, r2 = random_forest_predictive_model(df)
+    predictions = model.predict(df[['market_cap', 'volume', 'circulating_supply']])
+    response = {
+        'predictions': predictions.tolist(),
+        'mean_absolute_error': mae,
+        'mean_squared_error': mse,
+        'r2_score': r2
+    }
+    return jsonify(response)
 
 
 # Main entry point of the application
