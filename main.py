@@ -26,7 +26,7 @@ import os
 import redis
 from influxdb_client import InfluxDBClient, Point, WriteOptions
 from influxdb_client.client.write_api import SYNCHRONOUS
-from feature_engineering import extract_social_media_sentiment_features
+from feature_engineering import extract_social_media_sentiment_features, analyze_market_data, predict_long_term_benefit
 from neural_network import build_and_train_model, predict_crypto_prices, evaluate_model_performance
 from cross_validation import perform_cross_validation, split_data, evaluate_model
 
@@ -653,6 +653,39 @@ def predict():
         return jsonify({'predictions': predictions, 'metrics': evaluation_metrics}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/analyze', methods=['POST'])
+def analyze():
+    logging.info("Received request for analysis.")
+    try:
+        data = request.get_json()
+
+        # Validate input structure
+        if 'social_media_data' not in data or 'market_data' not in data:
+            raise ValueError("Invalid input data format.")
+
+        # Process social media data
+        social_media_data = data['social_media_data']  # List of {symbol, text}
+        sentiment_features_list = []
+        for item in social_media_data:
+            sentiment_features = extract_social_media_sentiment_features(item['symbol'], item['text'])
+            if sentiment_features:
+                sentiment_features_list.append(sentiment_features)
+
+        sentiment_features_df = pd.DataFrame(sentiment_features_list)
+
+        # Process market data
+        market_data = pd.DataFrame(data['market_data'])  # DataFrame with market data
+        market_analysis = analyze_market_data(market_data)
+
+        # Predict long-term benefits
+        long_term_benefit = predict_long_term_benefit(sentiment_features_df, market_analysis)
+
+        return jsonify(long_term_benefit.to_dict(orient='records'))
+    except Exception as e:
+        logging.error(f"Error in analysis: {e}")
+        return jsonify({"error": str(e)}), 400
 
 
 # Assuming you have data ready to be used
