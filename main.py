@@ -1,7 +1,6 @@
 import threading
 import time
 from datetime import datetime, date
-import yfinance
 from flask import Flask, render_template, request, send_from_directory, jsonify
 import pandas as pd
 import numpy as np
@@ -27,6 +26,9 @@ import os
 import redis
 from influxdb_client import InfluxDBClient, Point, WriteOptions
 from influxdb_client.client.write_api import SYNCHRONOUS
+from feature_engineering import extract_social_media_sentiment_features
+from neural_network import build_and_train_model, predict_crypto_prices, evaluate_model_performance
+from cross_validation import perform_cross_validation, split_data, evaluate_model
 
 # Set up Flask app and other configurations
 app = Flask(__name__, static_url_path='/static')
@@ -60,19 +62,26 @@ class CustomJSONEncoder(json.JSONEncoder):
 # Function to write data to InfluxDB
 def write_to_influxdb(df, measurement):
     points = []
-    for index, row in df.iterrows():
-        point = Point(measurement)
-        for col, val in row.items():
-            if col == "time":
-                point = point.time(val)
-            elif isinstance(val, dict):
-                for key, value in val.items():
-                    point = point.field(f"{col}_{key}", value)
-            else:
-                point = point.field(col, val)
-        points.append(point)
-    write_api.write(bucket=influxdb_bucket, org=influxdb_org, record=points)
-    logging.info(f"Written data to InfluxDB: {measurement}")
+    try:
+        for index, row in df.iterrows():
+            point = Point(measurement)
+            for col, val in row.items():
+                if col == "time":
+                    point = point.time(val)
+                elif isinstance(val, dict):
+                    for key, value in val.items():
+                        point = point.field(f"{col}_{key}", value)
+                else:
+                    point = point.field(col, val)
+            points.append(point)
+        write_api.write(bucket=influxdb_bucket, org=influxdb_org, record=points)
+        logging.info(f"Written data to InfluxDB: {measurement}")
+    except Exception as e:
+        logging.error(f"Error writing data to InfluxDB: {str(e)}")
+        # Add additional logging for HTTP response details if available
+        if hasattr(e, 'response') and e.response:
+            logging.error(f"HTTP response code: {e.response.status_code}")
+            logging.error(f"HTTP response body: {e.response.text}")
 
 
 def get_influxdb_data():
@@ -108,22 +117,16 @@ def get_db_connection():
 
 # Function to fetch data from database with Redis caching
 def fetch_data_from_db():
-    cached_data = redis_client.get('crypto_data')
-    if cached_data:
-        logging.info("Fetching data from Redis cache.")
-        return json.loads(cached_data)
-    else:
-        logging.info("Fetching data from MySQL database.")
-        connection = get_db_connection()
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute("SELECT * FROM crypto_coins")
-                data = cursor.fetchall()
-                redis_client.set('crypto_data', json.dumps(data, cls=CustomJSONEncoder))  # Use custom encoder
-                logging.info("Caching data in Redis.")
-        finally:
-            connection.close()
-        return data
+    connection = get_db_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT * FROM crypto_coins")
+            data = cursor.fetchall()
+            redis_client.set('crypto_data', json.dumps(data, cls=CustomJSONEncoder))  # Update Redis cache
+            logging.info("Updated data in Redis cache.")
+    finally:
+        connection.close()
+    return data
 
 
 # Function to fetch cryptocurrency data from CoinGecko API
@@ -261,7 +264,7 @@ def analyze_crypto_data(df):
     return df
 
 
-# Function to build and train the LSTM model
+# Function to build and train the LSTM model (from neural_network.py)
 def build_and_train_model(X_train, y_train, params):
     model = Sequential([
         Input(shape=(X_train.shape[1], 1)),
@@ -336,7 +339,7 @@ def fetch_data_from_mysql():
     return data
 
 
-# Function to predict crypto prices and calculate evaluation metrics
+# Function to predict crypto prices and calculate evaluation metrics (from neural_network.py)
 def predict_crypto_prices(df):
     predictions = {}
     evaluation_metrics = {}
@@ -413,34 +416,49 @@ def evaluate_model_performance(y_true, y_pred):
     return mae, mse, r2
 
 
-# Scheduled data update thread function
-def scheduled_data_update():
+# Assuming your Flask app and required functions are defined above
+def scheduled_task():
     while True:
         try:
-            # Fetch crypto data and perform analysis
-            crypto_df = get_crypto_data()
-            analyzed_data = analyze_crypto_data(crypto_df)
+            # Fetch cryptocurrency data from CoinGecko API
+            df = get_crypto_data()
 
-            # Predict prices and save predictions
-            predictions, _ = predict_crypto_prices(analyzed_data)
-            save_predictions_to_mysql(predictions)
+            # Analyze cryptocurrency data
+            analyzed_df = analyze_crypto_data(df)
 
-            # Render the template with updated data
-            with app.app_context():
-                rendered_template = render_template('index.html',
-                                                    top_investments=analyzed_data.to_dict(orient='records'),
-                                                    prediction_dict=predictions)
-                cache.set('index_content', rendered_template)
+            # Save analyzed data to MySQL database
+            save_to_mysql_database(analyzed_df, "crypto_coins")
+
+            # Write analyzed data to InfluxDB
+            write_to_influxdb(analyzed_df, "current_price")
+
+            logging.info(f"Data updated and saved at: {datetime.now()}")
 
         except Exception as e:
-            logging.error(f"Error in scheduled data update: {str(e)}")
+            logging.error(f"Error in scheduled task: {str(e)}")
 
-        time.sleep(120)
+        time.sleep(120)  # Run every 2 minutes (adjust interval as needed)
 
 
-# Start the scheduled data update in a separate thread
-scheduler_thread = threading.Thread(target=scheduled_data_update)
-scheduler_thread.start()
+# Start the scheduled task in a separate thread
+scheduled_task_thread = threading.Thread(target=scheduled_task)
+scheduled_task_thread.start()
+
+
+# Scheduled task to periodically update Redis with fresh data from MySQL
+def scheduled_redis_update():
+    while True:
+        try:
+            fetch_data_from_db()
+        except Exception as e:
+            logging.error(f"Error in scheduled Redis update: {str(e)}")
+
+        time.sleep(120)  # Run every 2 minutes (adjust interval as needed)
+
+
+# Start the scheduled Redis update task in a separate thread
+scheduled_redis_update_thread = threading.Thread(target=scheduled_redis_update)
+scheduled_redis_update_thread.start()
 
 
 # Flask route for the index page
@@ -450,63 +468,49 @@ def index():
         sort_field = request.args.get('sort_field', 'expected_return')
         sort_order = request.args.get('sort_order', 'desc')
 
-        # Debugging print to check request parameters
-        print(f"Request args: {request.args}")
+        # Fetch data from wherever you store it (e.g., Redis, MySQL)
+        # Modify this part based on your actual data fetching mechanism
+        cached_data = redis_client.get('crypto_data')
+        if cached_data:
+            crypto_df = pd.DataFrame(json.loads(cached_data))
+        else:
+            logging.info("Fetching data from MySQL as Redis cache is empty or outdated.")
+            crypto_data = fetch_data_from_db()
+            if not crypto_data:
+                return "Failed to fetch crypto data from both Redis cache and MySQL."
+            crypto_df = pd.DataFrame(crypto_data)
+            # Update Redis cache
+            redis_client.set('crypto_data', json.dumps(crypto_data, cls=CustomJSONEncoder))
 
-        # Fetch data directly from MySQL database as a DataFrame
-        top_investments = pd.DataFrame(fetch_data_from_db())
-
-        if top_investments.empty:
-            return "Failed to fetch crypto data from the database."
-
-        # Handling 'page' parameter
+        # Handling 'page' parameter with default value of 1
         page = request.args.get('page', 1, type=int)
 
         # Sorting
-        valid_fields = ['name', 'current_price', 'expected_return', 'market_cap_rank']
+        valid_fields = list(crypto_df.columns)  # Use all columns as valid sort fields
         if sort_field not in valid_fields:
-            sort_field = 'name'
+            sort_field = 'expected_return'
         if sort_order not in ['asc', 'desc']:
-            sort_order = 'asc'
+            sort_order = 'desc'
 
-        top_investments.sort_values(by=sort_field, ascending=(sort_order == 'asc'), inplace=True)
+        crypto_df.sort_values(by=sort_field, ascending=(sort_order == 'asc'), inplace=True)
 
-        # Predict prices and evaluation metrics
-        predictions, evaluation_metrics = predict_crypto_prices(top_investments)
-        save_predictions_to_mysql(predictions)
-
-        # Calculate average metrics for reporting
-        average_mae = np.mean([metrics['MAE'] for metrics in evaluation_metrics.values()])
-        average_mse = np.mean([metrics['MSE'] for metrics in evaluation_metrics.values()])
-        average_r2 = np.mean([metrics['R2'] for metrics in evaluation_metrics.values()])
-
-        raw_data_filename = 'raw_data.json'
-        save_to_json_file(top_investments.to_dict(orient='records'), raw_data_filename)
-
-        next_week_predictions = {}
-        for coin in top_investments['name'].unique():
-            next_week_predictions[coin] = predict_next_week_price(coin)
-
+        # Pagination
         per_page = 100
-        total = len(top_investments)
+        total = len(crypto_df)
         start = (page - 1) * per_page
         end = start + per_page
-        paginated_top_investments = top_investments[start:end]
+        paginated_crypto_df = crypto_df.iloc[start:end].copy()
+
+        # Convert DataFrame to a list of dictionaries (JSON serializable)
+        top_investments = paginated_crypto_df.to_dict(orient='records')
 
         return render_template('index.html',
-                               top_investments=paginated_top_investments.to_dict(orient='records'),
-                               prediction_dict=predictions,
-                               next_week_predictions=next_week_predictions,
-                               raw_data_filename=raw_data_filename,
+                               top_investments=top_investments,
                                page=page,
                                total=total,
                                per_page=per_page,
                                sort_field=sort_field,
-                               sort_order=sort_order,
-                               evaluation_metrics=evaluation_metrics,
-                               average_mae=average_mae,
-                               average_mse=average_mse,
-                               average_r2=average_r2)
+                               sort_order=sort_order)
 
     except Exception as e:
         logging.error(f"Error in index route: {str(e)}")
@@ -537,11 +541,11 @@ def show_candlestick(symbol):
 
         if not start_date or not end_date:
             # Default period if no dates provided
-            period = '1mo'
+            period = '6mo'
             interval = '1d'
         else:
             # Custom period based on the dates provided
-            period = None  # No period when specific date range is provided
+            period = '1mo'
             interval = '1d'
 
         # Fetch historical data for the cryptocurrency using ticker
@@ -599,12 +603,6 @@ def show_candlestick(symbol):
         # Render the HTML template with the candlestick graph
         return render_template('candlestick.html', symbol=symbol, graph_html=graph_html)
 
-    except yfinance.YFPricesMissingError as e:
-        # Handle Yahoo Finance specific error
-        error_message = f"Yahoo Finance error: {str(e)}"
-        logging.error(error_message)
-        return render_template('error.html', error_message=error_message)
-
     except ValueError as e:
         # Handle specific errors related to data not found or other expected issues
         error_message = f"Error: {str(e)}"
@@ -629,6 +627,56 @@ def show_candlestick(symbol):
     finally:
         if 'connection' in locals() and connection.open:
             connection.close()
+
+
+# Endpoint to handle sentiment analysis
+@app.route('/sentiment', methods=['POST'])
+def analyze_sentiment():
+    data = request.get_json()
+    if 'symbol' in data and 'text' in data:
+        symbol = data['symbol']
+        text = data['text']
+        sentiment_features = extract_social_media_sentiment_features(symbol, text)
+        return jsonify(sentiment_features), 200
+    else:
+        return jsonify({'error': 'Invalid request. Required fields: symbol, text'}), 400
+
+
+# Flask route for prediction endpoint
+@app.route('/predict', methods=['POST'])
+def predict():
+    try:
+        data = request.get_json()
+        # Assuming data contains necessary features for prediction
+        df = pd.DataFrame(data)  # Example: Convert JSON data to DataFrame
+        predictions, evaluation_metrics = predict_crypto_prices(df)
+        return jsonify({'predictions': predictions, 'metrics': evaluation_metrics}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# Assuming you have data ready to be used
+data = pd.read_json('raw_data.json')  # Replace with your data loading mechanism
+
+
+# Flask route for model training and evaluation
+@app.route('/train-model', methods=['POST'])
+def train_model():
+    try:
+        X_train, X_test, y_train, y_test = split_data(data)  # Implement split_data function accordingly
+        model = RandomForestRegressor()  # Initialize your model here
+        model.fit(X_train, y_train)
+
+        # Perform cross-validation and evaluation
+        cv_results = perform_cross_validation(model, X_train, y_train)  # Implement perform_cross_validation function accordingly
+        evaluation = evaluate_model(model, X_test, y_test)  # Implement evaluate_model function accordingly
+
+        return jsonify({
+            'cv_results': cv_results,
+            'evaluation': evaluation
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 # Add a route to serve static files, if necessary
