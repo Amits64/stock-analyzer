@@ -115,20 +115,23 @@
             animation: fadeIn 0.6s ease-out;
         }
         .sentiment-indicator {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
+            width: 10px;
+            height: 10px;
             border-radius: 50%;
-            margin-left: 5px;
+            display: inline-block;
+            margin-right: 5px;
         }
-        .positive {
-            background-color: #4CAF50; /* Green */
+        .sentiment-indicator.positive {
+            background-color: green;
         }
-        .negative {
-            background-color: #f44336; /* Red */
+        .sentiment-indicator.negative {
+            background-color: red;
         }
-        .neutral {
-            background-color: #2196F3; /* Blue */
+        .sentiment-indicator.neutral {
+            background-color: gray;
+        }
+        .sentiment-text {
+            vertical-align: middle;
         }
     </style>
 </head>
@@ -143,8 +146,25 @@
                 <option value="expected_return" {% if sort_field == 'expected_return' %}selected{% endif %}>Expected Return</option>
                 <option value="high_24h" {% if sort_field == 'high_24h' %}selected{% endif %}>High 24h</option>
                 <option value="low_24h" {% if sort_field == 'low_24h' %}selected{% endif %}>Low 24h</option>
+                <option value="last_updated" {% if sort_field == 'last_updated' %}selected{% endif %}>Last Updated</option>
+                <option value="price_change_24h" {% if sort_field == 'price_change_24h' %}selected{% endif %}>Price Change 24h</option>
+                <option value="price_change_percentage_24h" {% if sort_field == 'price_change_percentage_24h' %}selected{% endif %}>Price Change % 24h</option>
+                <option value="ath" {% if sort_field == 'ath' %}selected{% endif %}>ATH</option>
+                <option value="ath_date" {% if sort_field == 'ath_date' %}selected{% endif %}>ATH Date</option>
+                <option value="ath_change_percentage" {% if sort_field == 'ath_change_percentage' %}selected{% endif %}>ATH Change %</option>
+                <option value="atl_change_percentage" {% if sort_field == 'atl_change_percentage' %}selected{% endif %}>ATL Change %</option>
                 <option value="market_cap" {% if sort_field == 'market_cap' %}selected{% endif %}>Market Cap</option>
+                <option value="market_cap_change_24h" {% if sort_field == 'market_cap_change_24h' %}selected{% endif %}>Market Cap Change 24h</option>
+                <option value="market_cap_change_percentage_24h" {% if sort_field == 'market_cap_change_percentage_24h' %}selected{% endif %}>Market Cap Change % 24h</option>
                 <option value="market_cap_rank" {% if sort_field == 'market_cap_rank' %}selected{% endif %}>Market Cap Rank</option>
+                <option value="circulating_supply" {% if sort_field == 'circulating_supply' %}selected{% endif %}>Circulating Supply</option>
+                <option value="price_day_1" {% if sort_field == 'price_day_1' %}selected{% endif %}>Price Day 1</option>
+                <option value="price_day_2" {% if sort_field == 'price_day_2' %}selected{% endif %}>Price Day 2</option>
+                <option value="price_day_3" {% if sort_field == 'price_day_3' %}selected{% endif %}>Price Day 3</option>
+                <option value="price_day_4" {% if sort_field == 'price_day_4' %}selected{% endif %}>Price Day 4</option>
+                <option value="price_day_5" {% if sort_field == 'price_day_5' %}selected{% endif %}>Price Day 5</option>
+                <option value="price_day_6" {% if sort_field == 'price_day_6' %}selected{% endif %}>Price Day 6</option>
+                <option value="price_day_7" {% if sort_field == 'price_day_7' %}selected{% endif %}>Price Day 7</option>
             </select>
             <select id="sort_order" name="sort_order">
                 <option value="asc" {% if sort_order == 'asc' %}selected{% endif %}>Ascending</option>
@@ -168,8 +188,6 @@
                     <th>ATH (₹)</th>
                     <th>ATH Date</th>
                     <th>ATH Change %</th>
-                    <th>ATL (₹)</th>
-                    <th>ATL Date</th>
                     <th>ATL Change %</th>
                     <th>Market Cap (₹)</th>
                     <th>Market Cap Change 24h</th>
@@ -202,8 +220,6 @@
                         <td>₹ {{ coin["ath"] }}</td>
                         <td>{{ coin["ath_date"] }}</td>
                         <td>{{ coin["ath_change_percentage"] }}%</td>
-                        <td>₹ {{ coin["atl"] }}</td>
-                        <td>{{ coin["atl_date"] }}</td>
                         <td>{{ coin["atl_change_percentage"] }}%</td>
                         <td>₹ {{ coin["market_cap"] }}</td>
                         <td>{{ coin["market_cap_change_24h"] }}</td>
@@ -220,10 +236,13 @@
                         <td>
                             {% if coin["sentiment"] == 'positive' %}
                                 <div class="sentiment-indicator positive" title="Positive"></div>
+                                <span class="sentiment-text">Positive</span>
                             {% elif coin["sentiment"] == 'negative' %}
                                 <div class="sentiment-indicator negative" title="Negative"></div>
+                                <span class="sentiment-text">Negative</span>
                             {% else %}
                                 <div class="sentiment-indicator neutral" title="Neutral"></div>
+                                <span class="sentiment-text">Neutral</span>
                             {% endif %}
                         </td>
                         <td><a href="/candlestick/{{ coin["id"] }}">View Candlestick Graph</a></td>
@@ -247,7 +266,7 @@
     <script>
         // Function to fetch data from backend and update the table
         function fetchDataAndUpdate() {
-            fetch('/fetch_data') // Replace with your backend endpoint that fetches data from Redis
+            fetch('/fetch_data') // Replace with your backend endpoint that fetches data from Redis or other source
                 .then(response => response.json())
                 .then(data => {
                     const cryptoTableBody = document.getElementById('cryptoTableBody');
@@ -266,8 +285,6 @@
                             <td>₹ ${coin.ath}</td>
                             <td>${coin.ath_date}</td>
                             <td>${coin.ath_change_percentage}%</td>
-                            <td>₹ ${coin.atl}</td>
-                            <td>${coin.atl_date}</td>
                             <td>${coin.atl_change_percentage}%</td>
                             <td>₹ ${coin.market_cap}</td>
                             <td>${coin.market_cap_change_24h}</td>
@@ -282,9 +299,9 @@
                             <td>₹ ${coin.price_day_6}</td>
                             <td>₹ ${coin.price_day_7}</td>
                             <td>
-                                ${coin.sentiment === 'positive' ? '<div class="sentiment-indicator positive" title="Positive"></div>'
-                                : coin.sentiment === 'negative' ? '<div class="sentiment-indicator negative" title="Negative"></div>'
-                                : '<div class="sentiment-indicator neutral" title="Neutral"></div>'}
+                                ${coin.sentiment === 'positive' ? '<div class="sentiment-indicator positive" title="Positive"></div><span class="sentiment-text">Positive</span>'
+                                : coin.sentiment === 'negative' ? '<div class="sentiment-indicator negative" title="Negative"></div><span class="sentiment-text">Negative</span>'
+                                : '<div class="sentiment-indicator neutral" title="Neutral"></div><span class="sentiment-text">Neutral</span>'}
                             </td>
                             <td><a href="/candlestick/${coin.id}">View Candlestick Graph</a></td>
                         `;
