@@ -1,6 +1,6 @@
 import threading
 import time
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from flask import Flask, render_template, request, send_from_directory, jsonify
 import pandas as pd
 import numpy as np
@@ -9,6 +9,7 @@ import pymysql.cursors
 import yfinance as yf
 import json
 from influxdb_client.client import query_api
+from matplotlib import pyplot as plt
 from pygments.lexers import go
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split, GridSearchCV
@@ -17,6 +18,8 @@ import plotly.io as pio
 import plotly.graph_objs as go
 import diskcache as dc
 from sklearn.preprocessing import MinMaxScaler
+from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.tsa.statespace.sarimax import SARIMAX
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, LSTM, Input, Dropout
 import matplotlib
@@ -29,6 +32,10 @@ from influxdb_client.client.write_api import SYNCHRONOUS
 from feature_engineering import extract_social_media_sentiment_features, analyze_market_data, predict_long_term_benefit
 from neural_network import build_and_train_model, predict_crypto_prices, evaluate_model_performance
 from cross_validation import perform_cross_validation, split_data, evaluate_model
+from models.arima_model import arima_forecast
+from models.sarimax_model import sarimax_forecast
+from models.sarima_model import sarima_forecast
+from data_fetcher import load_crypto_data, preprocess_data
 
 # Set up Flask app and other configurations
 app = Flask(__name__, static_url_path='/static')
@@ -403,9 +410,56 @@ def save_to_json_file(data, filename):
         json.dump(data, file)
 
 
-# Placeholder function for next week price prediction
-def predict_next_week_price(coin):
-    return 0.0  # Placeholder value
+# Placeholder SARIMAX model fitting function (replace with your actual model fitting logic)
+def fit_sarimax_model(coin_data):
+    # Example placeholder: Fit SARIMAX model using coin_data
+    # Replace this with your actual SARIMAX model fitting logic
+    model = SARIMAX(coin_data, order=(1, 1, 1), seasonal_order=(1, 1, 1, 12))
+    fitted_model = model.fit()
+    return fitted_model
+
+
+def predict_next_week_price(coin_data, model_type='sarimax'):
+    """
+    Predict next week's prices using a time series model (ARIMA, SARIMA, SARIMAX).
+
+    Parameters:
+    - coin_data: A pandas Series or DataFrame with datetime index containing historical prices.
+    - model_type: Type of model to use for forecasting ('arima', 'sarima', 'sarimax'). Default is 'sarimax'.
+
+    Returns:
+    - forecasted_series: A pandas Series with forecasted prices for next week.
+    """
+    if model_type.lower() == 'arima':
+        # Implement ARIMA model forecasting
+        pass  # Replace with your ARIMA forecasting code
+    elif model_type.lower() == 'sarima':
+        # Implement SARIMA model forecasting
+        pass  # Replace with your SARIMA forecasting code
+    elif model_type.lower() == 'sarimax':
+        # Fit SARIMAX model using custom function
+        sarimax_model = fit_sarimax_model(coin_data)
+
+        # Forecasting next week's prices (7 days)
+        forecast_horizon = 7
+        forecast_dates = [coin_data.index[-1] + timedelta(days=i + 1) for i in range(forecast_horizon)]
+        forecast = sarimax_model.get_forecast(steps=forecast_horizon)
+        forecasted_prices = forecast.predicted_mean
+
+        # Create a pandas series with forecasted dates as index
+        forecasted_series = pd.Series(forecasted_prices, index=forecast_dates)
+
+        return forecasted_series
+    else:
+        raise ValueError(f"Unsupported model type: {model_type}")
+
+
+coin_data = pd.Series([100, 110, 105, 120, 125, 130], index=pd.date_range(start='2024-07-01', periods=6, freq='D'))
+
+# Predict next week's prices using SARIMAX model
+next_week_forecast = predict_next_week_price(coin_data, model_type='sarimax')
+print("Forecasted prices for next week (SARIMAX):")
+print(next_week_forecast)
 
 
 # Function to evaluate model performance
@@ -414,6 +468,165 @@ def evaluate_model_performance(y_true, y_pred):
     mse = mean_squared_error(y_true, y_pred)
     r2 = r2_score(y_true, y_pred)
     return mae, mse, r2
+
+
+# Function to load cryptocurrency data from CSV
+def load_crypto_data(coin_name):
+    try:
+        # Construct the correct file path based on coin_id
+        file_name = f'{coin_name}_USD.csv'
+        file_path = os.path.join('dataset', file_name)
+
+        if os.path.exists(file_path):
+            return pd.read_csv(file_path)
+        else:
+            return None
+    except Exception as e:
+        app.logger.error(f"Error loading data for {coin_name}: {str(e)}")
+        return None
+
+
+def arima_forecast(df):
+    fig_path = os.path.join('static', 'arima_forecast.png')
+    forecast_mean = df['price'].mean()  # Replace with actual forecast mean
+    conf_int = (df['price'].min(), df['price'].max())  # Replace with actual confidence interval
+    return fig_path, forecast_mean, conf_int
+
+
+def sarima_forecast(df):
+    fig_path = os.path.join('static', 'sarima_forecast.png')
+    forecast_mean = df['price'].mean()  # Replace with actual forecast mean
+    conf_int = (df['price'].min(), df['price'].max())  # Replace with actual confidence interval
+    return fig_path, forecast_mean, conf_int
+
+
+def sarimax_forecast(df):
+    fig_path = os.path.join('static', 'sarimax_forecast.png')
+    forecast_mean = df['price'].mean()  # Replace with actual forecast mean
+    conf_int = (df['price'].min(), df['price'].max())  # Replace with actual confidence interval
+    return fig_path, forecast_mean, conf_int
+
+
+# Function for ARIMA forecast
+def arima_forecast(df):
+    try:
+        # Fit ARIMA model
+        model = ARIMA(df['price'], order=(5, 1, 0))  # Example ARIMA parameters
+        model_fit = model.fit()
+
+        # Forecast next 7 days
+        forecast_horizon = 7
+        forecast = model_fit.get_forecast(steps=forecast_horizon)
+        forecast_mean = forecast.predicted_mean
+        conf_int = forecast.conf_int()
+
+        # Plotting
+        fig, ax = plt.subplots(figsize=(12, 6))
+        df['price'].plot(ax=ax, label='Historical Data')
+        forecast_mean.plot(ax=ax, label='ARIMA Forecast', color='blue')
+        ax.fill_between(conf_int.index, conf_int.iloc[:, 0], conf_int.iloc[:, 1], color='blue', alpha=0.2)
+
+        # Formatting
+        ax.set_title('ARIMA Forecast for Cryptocurrency Prices')
+        ax.set_xlabel('Date')
+        ax.set_ylabel('Price')
+        ax.legend()
+
+        # Save and close plot
+        fig_path = os.path.join('static', 'arima_forecast.png')
+        plt.savefig(fig_path)
+        plt.close(fig)
+
+        return fig_path, forecast_mean, conf_int
+    except Exception as e:
+        app.logger.error(f"Error in ARIMA forecast: {str(e)}")
+        return None, None, None
+
+
+# Function for SARIMA forecast
+def sarima_forecast(df):
+    try:
+        # Fit SARIMA model
+        model = SARIMAX(df['price'], order=(1, 1, 1), seasonal_order=(1, 1, 1, 12))  # Example SARIMA parameters
+        model_fit = model.fit(disp=False)
+
+        # Forecast next 7 days
+        forecast_horizon = 7
+        forecast = model_fit.get_forecast(steps=forecast_horizon)
+        forecast_mean = forecast.predicted_mean
+        conf_int = forecast.conf_int()
+
+        # Plotting
+        fig, ax = plt.subplots(figsize=(12, 6))
+        df['price'].plot(ax=ax, label='Historical Data')
+        forecast_mean.plot(ax=ax, label='SARIMA Forecast', color='green')
+        ax.fill_between(conf_int.index, conf_int.iloc[:, 0], conf_int.iloc[:, 1], color='green', alpha=0.2)
+
+        # Formatting
+        ax.set_title('SARIMA Forecast for Cryptocurrency Prices')
+        ax.set_xlabel('Date')
+        ax.set_ylabel('Price')
+        ax.legend()
+
+        # Save and close plot
+        fig_path = os.path.join('static', 'sarima_forecast.png')
+        plt.savefig(fig_path)
+        plt.close(fig)
+
+        return fig_path, forecast_mean, conf_int
+    except Exception as e:
+        app.logger.error(f"Error in SARIMA forecast: {str(e)}")
+        return None, None, None
+
+
+# Function for SARIMAX forecast
+def sarimax_forecast(df):
+    try:
+        # Add exogenous variables if applicable
+        exog = None
+
+        # Fit SARIMAX model
+        model = SARIMAX(df['price'], exog=exog, order=(1, 1, 1),
+                        seasonal_order=(1, 1, 1, 12))  # Example SARIMAX parameters
+        model_fit = model.fit(disp=False)
+
+        # Forecast next 7 days
+        forecast_horizon = 7
+        forecast = model_fit.get_forecast(steps=forecast_horizon, exog=exog)
+        forecast_mean = forecast.predicted_mean
+        conf_int = forecast.conf_int()
+
+        # Plotting
+        fig, ax = plt.subplots(figsize=(12, 6))
+        df['price'].plot(ax=ax, label='Historical Data')
+        forecast_mean.plot(ax=ax, label='SARIMAX Forecast', color='red')
+        ax.fill_between(conf_int.index, conf_int.iloc[:, 0], conf_int.iloc[:, 1], color='red', alpha=0.2)
+
+        # Formatting
+        ax.set_title('SARIMAX Forecast for Cryptocurrency Prices')
+        ax.set_xlabel('Date')
+        ax.set_ylabel('Price')
+        ax.legend()
+
+        # Save and close plot
+        fig_path = os.path.join('static', 'sarimax_forecast.png')
+        plt.savefig(fig_path)
+        plt.close(fig)
+
+        return fig_path, forecast_mean, conf_int
+    except Exception as e:
+        app.logger.error(f"Error in SARIMAX forecast: {str(e)}")
+        return None, None, None
+
+
+# Function to calculate Bollinger Bands
+def calculate_bollinger_bands(df):
+    df['SMA'] = df['Close'].rolling(window=20).mean()  # Simple Moving Average (SMA)
+    df['Std_dev'] = df['Close'].rolling(window=20).std()  # Standard deviation
+    df['Upper_band'] = df['SMA'] + 2 * df['Std_dev']  # Upper Bollinger Band
+    df['Lower_band'] = df['SMA'] - 2 * df['Std_dev']  # Lower Bollinger Band
+    df.drop(['Std_dev'], axis=1, inplace=True)  # Drop temporary column
+    return df
 
 
 # Assuming your Flask app and required functions are defined above
@@ -437,7 +650,7 @@ def scheduled_task():
         except Exception as e:
             logging.error(f"Error in scheduled task: {str(e)}")
 
-        time.sleep(120)  # Run every 2 minutes (adjust interval as needed)
+        time.sleep(300)  # Run every 5 minutes (adjust interval as needed)
 
 
 # Start the scheduled task in a separate thread
@@ -453,7 +666,7 @@ def scheduled_redis_update():
         except Exception as e:
             logging.error(f"Error in scheduled Redis update: {str(e)}")
 
-        time.sleep(120)  # Run every 2 minutes (adjust interval as needed)
+        time.sleep(300)  # Run every 5 minutes (adjust interval as needed)
 
 
 # Start the scheduled Redis update task in a separate thread
@@ -517,12 +730,6 @@ def index():
         return "An error occurred. Please try again later.", 500
 
 
-# Function to add technical indicators
-def add_technical_indicators(df):
-    df['SMA'] = df['Close'].rolling(window=20).mean()  # Example: Simple Moving Average (SMA)
-    return df
-
-
 # Route for displaying candlestick graph for a cryptocurrency
 @app.route('/candlestick/<symbol>')
 def show_candlestick(symbol):
@@ -558,8 +765,8 @@ def show_candlestick(symbol):
         if df.empty:
             raise ValueError(f"No data found for symbol: {symbol}")
 
-        # Add technical indicators (e.g., SMA) to the dataframe
-        df = add_technical_indicators(df)
+        # Calculate Bollinger Bands and SMA
+        df = calculate_bollinger_bands(df)
 
         # Generate the candlestick graph using Plotly
         candlestick_fig = go.Figure(data=[go.Candlestick(
@@ -571,17 +778,33 @@ def show_candlestick(symbol):
             name=symbol
         )])
 
-        # Add SMA to the candlestick graph
+        # Add Bollinger Bands and SMA to the candlestick graph
+        candlestick_fig.add_trace(go.Scatter(
+            x=df.index,
+            y=df['Upper_band'],
+            mode='lines',
+            line=dict(color='blue', width=1),
+            name='Upper Bollinger Band'
+        ))
+
+        candlestick_fig.add_trace(go.Scatter(
+            x=df.index,
+            y=df['Lower_band'],
+            mode='lines',
+            line=dict(color='red', width=1),
+            name='Lower Bollinger Band'
+        ))
+
         candlestick_fig.add_trace(go.Scatter(
             x=df.index,
             y=df['SMA'],
             mode='lines',
-            name='SMA',
-            line=dict(color='orange', width=2)
+            line=dict(color='orange', width=2),
+            name='SMA (20 periods)'
         ))
 
         candlestick_fig.update_layout(
-            title=f'Candlestick Graph for {symbol}',
+            title=f'Candlestick Graph with Bollinger Bands and SMA for {symbol}',
             xaxis_title='Date',
             yaxis_title='Price',
             xaxis_rangeslider_visible=False
@@ -597,7 +820,10 @@ def show_candlestick(symbol):
                 'Open': df['Open'].tolist(),
                 'High': df['High'].tolist(),
                 'Low': df['Low'].tolist(),
-                'Close': df['Close'].tolist()
+                'Close': df['Close'].tolist(),
+                'Upper_band': df['Upper_band'].tolist(),
+                'Lower_band': df['Lower_band'].tolist(),
+                'SMA': df['SMA'].tolist()
             })
 
         # Render the HTML template with the candlestick graph
@@ -627,6 +853,42 @@ def show_candlestick(symbol):
     finally:
         if 'connection' in locals() and connection.open:
             connection.close()
+
+
+# Flask route for forecast
+@app.route('/forecast/<coin_id>')
+def forecast(coin_id):
+    try:
+        df = load_crypto_data(coin_id)
+
+        if df is None or df.empty:
+            return render_template('error.html', message=f"Data not available for {coin_id}")
+
+        df_processed = preprocess_data(df)
+
+        arima_fig_path, arima_forecast_mean, arima_conf_int = arima_forecast(df_processed)
+        sarima_fig_path, sarima_forecast_mean, sarima_conf_int = sarima_forecast(df_processed)
+        sarimax_fig_path, sarimax_forecast_mean, sarimax_conf_int = sarimax_forecast(df_processed)
+
+        if arima_fig_path is None or sarima_fig_path is None or sarimax_fig_path is None:
+            return render_template('error.html', message=f"Forecasting error for {coin_id}")
+
+        return render_template(
+            'forecast.html',
+            coin_id=coin_id,
+            arima_fig=os.path.basename(arima_fig_path),
+            arima_forecast=arima_forecast_mean.tolist() if hasattr(arima_forecast_mean, 'tolist') else arima_forecast_mean,
+            arima_conf_int=arima_conf_int if isinstance(arima_conf_int, list) else arima_conf_int.values.tolist(),
+            sarima_fig=os.path.basename(sarima_fig_path),
+            sarima_forecast=sarima_forecast_mean.tolist() if hasattr(sarima_forecast_mean, 'tolist') else sarima_forecast_mean,
+            sarima_conf_int=sarima_conf_int if isinstance(sarima_conf_int, list) else sarima_conf_int.values.tolist(),
+            sarimax_fig=os.path.basename(sarimax_fig_path),
+            sarimax_forecast=sarimax_forecast_mean.tolist() if hasattr(sarimax_forecast_mean, 'tolist') else sarimax_forecast_mean,
+            sarimax_conf_int=sarimax_conf_int if isinstance(sarimax_conf_int, list) else sarimax_conf_int.values.tolist()
+        )
+    except Exception as e:
+        app.logger.error(f"Error in forecast: {str(e)}")
+        return render_template('error.html', message=f"Error in forecast: {str(e)}")
 
 
 # Endpoint to handle sentiment analysis
