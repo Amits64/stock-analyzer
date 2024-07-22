@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: crypto-analysis
+spec:
+  selector:
+    app: crypto-analysis
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 5001
+    - protocol: TCP
+      port: 81
+      targetPort: 5002
+    - protocol: TCP
+      port: 82
+      targetPort: 5003
+  type: LoadBalancer

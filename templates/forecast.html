@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Forecast Results</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        .image-container {
+            text-align: center;
+            margin: 20px 0;
+        }
+        img {
+            max-width: 100%;
+            height: auto;
+        }
+        .message {
+            text-align: center;
+            font-size: 18px;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Forecast Results</h1>
+        <div class="image-container" id="forecastImageContainer">
+            <p class="message" id="message">Generating forecast, please wait...</p>
+        </div>
+    </div>
+
+    <script>
+        fetch('/generate-forecast', { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'Forecast generated successfully') {
+                    const img = new Image();
+                    img.src = `data:image/png;base64,${data.image}`;
+                    document.getElementById('forecastImageContainer').innerHTML = '';
+                    document.getElementById('forecastImageContainer').appendChild(img);
+                } else {
+                    document.getElementById('message').innerText = data.error || 'An error occurred while generating the forecast.';
+                }
+            })
+            .catch(error => {
+                document.getElementById('message').innerText = 'An error occurred while generating the forecast.';
+                console.error('Error:', error);
+            });
+    </script>
+</body>
+</html>

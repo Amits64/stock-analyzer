@@ -1,0 +1,7 @@
+FROM nginx:alpine
+
+COPY index.html /usr/share/nginx/html/index.html
+COPY ../static/styles.css /usr/share/nginx/html/styles.css
+COPY ../static/js/script.js /usr/share/nginx/html/script.js
+
+EXPOSE 80

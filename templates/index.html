@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto Analysis Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='static/styles.css') }}">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f9;
+            margin: 0;
+            padding: 0;
+            color: #333;
+        }
+        header {
+            background-color: #333;
+            color: #fff;
+            padding: 20px;
+            text-align: center;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: #fff;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+        }
+        h1, h2 {
+            color: #333;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background-color 0.3s ease;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        select {
+            padding: 10px;
+            font-size: 16px;
+            margin-left: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        pre {
+            background-color: #f1f1f1;
+            padding: 10px;
+            border-radius: 4px;
+            overflow: auto;
+        }
+        img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+        }
+        .loading {
+            display: none;
+            font-size: 16px;
+            color: #007bff;
+        }
+        .error {
+            color: #dc3545;
+        }
+        .progress-container {
+            width: 100%;
+            background-color: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 10px 0;
+            height: 30px;
+            position: relative;
+        }
+        .progress-bar {
+            height: 100%;
+            width: 0;
+            background-color: #007bff;
+            transition: width 0.4s ease;
+            text-align: center;
+            color: white;
+            line-height: 30px; /* Center text vertically */
+        }
+        .button-container {
+            display: flex;
+            align-items: center;
+        }
+        .button-container button {
+            margin-right: 10px;
+        }
+        #log-dialog {
+            position: fixed;
+            bottom: 0;
+            right: 0;
+            width: 300px;
+            height: 200px;
+            background-color: #fff;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+            z-index: 1000;
+            display: none; /* Hidden by default */
+        }
+        #log-dialog-header {
+            background-color: #007bff;
+            color: white;
+            padding: 10px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        #log-dialog-body {
+            height: calc(100% - 40px);
+            padding: 10px;
+            overflow-y: auto;
+            background-color: #f4f4f4;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Crypto Analysis Dashboard</h1>
+    </header>
+    <div class="container">
+        <div>
+            <h2>Fetch Data</h2>
+            <button id="fetch-data">Fetch Data</button>
+            <pre id="data-output"></pre>
+            <p id="data-status" class="loading">Loading data...</p>
+            <p id="data-error" class="error"></p>
+            <div class="progress-container">
+                <div id="data-progress" class="progress-bar">0%</div>
+            </div>
+        </div>
+        <div>
+            <h2>Process Data</h2>
+            <button id="process-data">Process Data</button>
+            <pre id="processed-data-output"></pre>
+            <p id="process-status" class="loading">Processing data...</p>
+            <p id="process-error" class="error"></p>
+            <div class="progress-container">
+                <div id="process-progress" class="progress-bar">0%</div>
+            </div>
+        </div>
+        <div>
+            <h2>Select Coin and Forecast</h2>
+            <div class="button-container">
+                <select id="coin-select">
+                    <option value="">Select a coin</option>
+                    <!-- Options will be populated dynamically -->
+                </select>
+                <button id="forecast-data">Generate Forecast</button>
+            </div>
+            <img id="forecast-image" alt="Forecast Image">
+            <p id="forecast-status" class="loading">Generating forecast...</p>
+            <p id="forecast-error" class="error"></p>
+        </div>
+    </div>
+
+    <!-- Log Dialog -->
+    <div id="log-dialog">
+        <div id="log-dialog-header">
+            <span>Logs</span>
+            <button id="log-dialog-close">X</button>
+        </div>
+        <div id="log-dialog-body"></div>
+    </div>
+
+    <script>
+        const dataServiceUrl = 'http://localhost:5001/fetch-data';  // Replace with your actual URL
+        const processServiceUrl = 'http://localhost:5002/process-data';  // Replace with your actual URL
+        const forecastServiceUrl = 'http://localhost:5003/generate-forecast';  // Replace with your actual URL
+        const csvFileUrl = 'http://localhost:5004/processed-data.csv';  // URL to fetch CSV data
+
+        function updateProgressBar(id, percentage) {
+            const progressBar = document.getElementById(id);
+            progressBar.style.width = percentage + '%';
+            progressBar.textContent = percentage + '%';
+        }
+
+        function showStatus(id, message) {
+            document.getElementById(id).textContent = message;
+            document.getElementById(id).style.display = 'block';
+        }
+
+        function hideStatus(id) {
+            document.getElementById(id).style.display = 'none';
+        }
+
+        function showError(id, message) {
+            document.getElementById(id).textContent = message;
+            document.getElementById(id).style.display = 'block';
+        }
+
+        function hideError(id) {
+            document.getElementById(id).style.display = 'none';
+        }
+
+        function logMessage(message) {
+            const logDialogBody = document.getElementById('log-dialog-body');
+            const logEntry = document.createElement('div');
+            logEntry.textContent = message;
+            logDialogBody.appendChild(logEntry);
+            logDialogBody.scrollTop = logDialogBody.scrollHeight;  // Scroll to bottom
+        }
+
+        function showLogDialog() {
+            document.getElementById('log-dialog').style.display = 'block';
+        }
+
+        function hideLogDialog() {
+            document.getElementById('log-dialog').style.display = 'none';
+        }
+
+        document.getElementById('log-dialog-close').addEventListener('click', hideLogDialog);
+
+        async function fetchCsvData() {
+            try {
+                const response = await fetch(csvFileUrl);
+                if (!response.ok) throw new Error('Network response was not ok');
+                const csvText = await response.text();
+                const data = Papa.parse(csvText, { header: true }).data;  // Use PapaParse library to parse CSV
+                return data;
+            } catch (error) {
+                showError('data-error', 'Error fetching CSV data: ' + error.message);
+                logMessage('Error fetching CSV data: ' + error.message);
+                return [];
+            }
+        }
+
+        function populateCoinSelect(data) {
+            const coinSelect = document.getElementById('coin-select');
+            coinSelect.innerHTML = '<option value="">Select a coin</option>'; // Clear existing options
+            const uniqueCoins = [...new Set(data.map(row => row.symbol))];  // Get unique coin symbols
+            uniqueCoins.forEach(symbol => {
+                const option = document.createElement('option');
+                option.value = symbol;
+                option.textContent = symbol;
+                coinSelect.appendChild(option);
+            });
+        }
+
+        document.getElementById('fetch-data').addEventListener('click', async () => {
+            hideError('data-error');
+            showStatus('data-status', 'Loading data...');
+            updateProgressBar('data-progress', 0);
+
+            try {
+                const response = await fetch(dataServiceUrl);
+                if (!response.ok) throw new Error('Network response was not ok');
+                const data = await response.json();
+                document.getElementById('data-output').textContent = JSON.stringify(data, null, 2);
+                logMessage('Fetched data successfully.');
+            } catch (error) {
+                showError('data-error', 'Error fetching data: ' + error.message);
+                logMessage('Error fetching data: ' + error.message);
+            } finally {
+                hideStatus('data-status');
+                updateProgressBar('data-progress', 100);
+            }
+        });
+
+        document.getElementById('process-data').addEventListener('click', async () => {
+            hideError('process-error');
+            showStatus('process-status', 'Processing data...');
+            updateProgressBar('process-progress', 0);
+
+            try {
+                const response = await fetch(processServiceUrl);
+                if (!response.ok) throw new Error('Network response was not ok');
+                const result = await response.json();
+                document.getElementById('processed-data-output').textContent = JSON.stringify(result, null, 2);
+                logMessage('Processed data successfully.');
+            } catch (error) {
+                showError('process-error', 'Error processing data: ' + error.message);
+                logMessage('Error processing data: ' + error.message);
+            } finally {
+                hideStatus('process-status');
+                updateProgressBar('process-progress', 100);
+            }
+        });
+
+        document.getElementById('forecast-data').addEventListener('click', async () => {
+            hideError('forecast-error');
+            showStatus('forecast-status', 'Generating forecast...');
+            updateProgressBar('forecast-progress', 0);
+
+            const selectedCoin = document.getElementById('coin-select').value;
+            if (!selectedCoin) {
+                showError('forecast-error', 'Please select a coin.');
+                logMessage('Please select a coin.');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${forecastServiceUrl}?coin=${encodeURIComponent(selectedCoin)}`);
+                if (!response.ok) throw new Error('Network response was not ok');
+                const result = await response.json();
+                document.getElementById('forecast-image').src = result.imageUrl; // Assuming result contains imageUrl
+                logMessage('Generated forecast successfully.');
+            } catch (error) {
+                showError('forecast-error', 'Error generating forecast: ' + error.message);
+                logMessage('Error generating forecast: ' + error.message);
+            } finally {
+                hideStatus('forecast-status');
+                updateProgressBar('forecast-progress', 100);
+            }
+        });
+
+        window.onload = async () => {
+            const data = await fetchCsvData();
+            populateCoinSelect(data);
+            showLogDialog();
+        };
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+</body>
+</html>

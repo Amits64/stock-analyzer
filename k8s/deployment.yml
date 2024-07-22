@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crypto-analysis
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: crypto-analysis
+  template:
+    metadata:
+      labels:
+        app: crypto-analysis
+    spec:
+      containers:
+        - name: data-service
+          image: my-dockerhub-account/data-service
+          ports:
+            - containerPort: 5001
+        - name: processing-service
+          image: my-dockerhub-account/processing-service
+          ports:
+            - containerPort: 5002
+        - name: forecasting-service
+          image: my-dockerhub-account/forecasting-service
+          ports:
+            - containerPort: 5003

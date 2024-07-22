@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto Analysis Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f9;
+            margin: 0;
+            padding: 0;
+            color: #333;
+        }
+        header {
+            background-color: #333;
+            color: #fff;
+            padding: 20px;
+            text-align: center;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: #fff;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+        }
+        h1, h2 {
+            color: #333;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background-color 0.3s ease;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        pre {
+            background-color: #f1f1f1;
+            padding: 10px;
+            border-radius: 4px;
+            overflow: auto;
+        }
+        img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+        }
+        .loading {
+            display: none;
+            font-size: 16px;
+            color: #007bff;
+        }
+        .error {
+            color: #dc3545;
+        }
+        .progress-container {
+            width: 100%;
+            background-color: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 10px 0;
+            height: 30px;
+            position: relative;
+        }
+        .progress-bar {
+            height: 100%;
+            width: 0;
+            background-color: #007bff;
+            transition: width 0.4s ease;
+            text-align: center;
+            color: white;
+            line-height: 30px; /* Center text vertically */
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Crypto Analysis Dashboard</h1>
+    </header>
+    <div class="container">
+        <div>
+            <h2>Fetch Data</h2>
+            <button id="fetch-data">Fetch Data</button>
+            <pre id="data-output"></pre>
+            <p id="data-status" class="loading">Loading data...</p>
+            <p id="data-error" class="error"></p>
+            <div class="progress-container">
+                <div id="data-progress" class="progress-bar">0%</div>
+            </div>
+        </div>
+        <div>
+            <h2>Process Data</h2>
+            <button id="process-data">Process Data</button>
+            <pre id="processed-data-output"></pre>
+            <p id="process-status" class="loading">Processing data...</p>
+            <p id="process-error" class="error"></p>
+            <div class="progress-container">
+                <div id="process-progress" class="progress-bar">0%</div>
+            </div>
+        </div>
+        <div>
+            <h2>Forecast Data</h2>
+            <button id="forecast-data">Generate Forecast</button>
+            <img id="forecast-image" alt="Forecast Image">
+            <p id="forecast-status" class="loading">Generating forecast...</p>
+            <p id="forecast-error" class="error"></p>
+        </div>
+    </div>
+    <script>
+        const dataServiceUrl = 'http://localhost:5001/fetch-data';  // Replace with your actual URL
+        const processServiceUrl = 'http://localhost:5002/process-data';  // Replace with your actual URL
+        const forecastServiceUrl = 'http://localhost:5003/forecast';  // Replace with your actual URL
+
+        function updateProgressBar(id, percentage) {
+            const progressBar = document.getElementById(id);
+            progressBar.style.width = percentage + '%';
+            progressBar.textContent = percentage + '%';
+        }
+
+        function showStatus(id, message) {
+            document.getElementById(id).textContent = message;
+            document.getElementById(id).style.display = 'block';
+        }
+
+        function hideStatus(id) {
+            document.getElementById(id).style.display = 'none';
+        }
+
+        function showError(id, message) {
+            document.getElementById(id).textContent = message;
+            document.getElementById(id).style.display = 'block';
+        }
+
+        function hideError(id) {
+            document.getElementById(id).style.display = 'none';
+        }
+
+        document.getElementById('fetch-data').addEventListener('click', async () => {
+            hideError('data-error');
+            showStatus('data-status', 'Loading data...');
+            updateProgressBar('data-progress', 0);
+            try {
+                const response = await fetch(dataServiceUrl);
+                if (!response.ok) throw new Error('Network response was not ok');
+                const data = await response.json();
+                document.getElementById('data-output').textContent = JSON.stringify(data, null, 2);
+                updateProgressBar('data-progress', 100);
+                hideStatus('data-status');
+            } catch (error) {
+                showError('data-error', 'Error fetching data: ' + error.message);
+                updateProgressBar('data-progress', 0);
+                hideStatus('data-status');
+            }
+        });
+
+        document.getElementById('process-data').addEventListener('click', async () => {
+            hideError('process-error');
+            showStatus('process-status', 'Processing data...');
+            updateProgressBar('process-progress', 0);
+            try {
+                const rawData = JSON.parse(document.getElementById('data-output').textContent);
+                const response = await fetch(processServiceUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(rawData)
+                });
+                if (!response.ok) throw new Error('Network response was not ok');
+                const processedData = await response.json();
+                document.getElementById('processed-data-output').textContent = JSON.stringify(processedData, null, 2);
+                updateProgressBar('process-progress', 100);
+                hideStatus('process-status');
+            } catch (error) {
+                showError('process-error', 'Error processing data: ' + error.message);
+                updateProgressBar('process-progress', 0);
+                hideStatus('process-status');
+            }
+        });
+
+        document.getElementById('forecast-data').addEventListener('click', async () => {
+            hideError('forecast-error');
+            showStatus('forecast-status', 'Generating forecast...');
+            try {
+                const processedData = JSON.parse(document.getElementById('processed-data-output').textContent);
+                const response = await fetch(forecastServiceUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(processedData)
+                });
+                if (!response.ok) throw new Error('Network response was not ok');
+                const result = await response.json();
+                document.getElementById('forecast-image').src = `data:image/png;base64,${result.forecast_image}`;
+                hideStatus('forecast-status');
+            } catch (error) {
+                showError('forecast-error', 'Error generating forecast: ' + error.message);
+                hideStatus('forecast-status');
+            }
+        });
+    </script>
+</body>
+</html>
