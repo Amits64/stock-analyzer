@@ -128,7 +128,7 @@ def preprocess_data(df):
             ('num', Pipeline(steps=[
                 ('impute', SimpleImputer(strategy='mean')),
                 ('scaler', StandardScaler()),
-                ('feature_selection', SelectKBest(score_func=f_regression, k=10)),
+                ('feature_selection', SelectKBest(score_func=f_regression, k='all')),
                 ('pca', PCA(n_components=0.95))
             ]), numeric_features)
         ]
