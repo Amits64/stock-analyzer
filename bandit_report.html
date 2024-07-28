@@ -1,0 +1,233 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+
+<meta charset="UTF-8">
+
+<title>
+    Bandit Report
+</title>
+
+<style>
+
+html * {
+    font-family: "Arial", sans-serif;
+}
+
+pre {
+    font-family: "Monaco", monospace;
+}
+
+.bordered-box {
+    border: 1px solid black;
+    padding-top:.5em;
+    padding-bottom:.5em;
+    padding-left:1em;
+}
+
+.metrics-box {
+    font-size: 1.1em;
+    line-height: 130%;
+}
+
+.metrics-title {
+    font-size: 1.5em;
+    font-weight: 500;
+    margin-bottom: .25em;
+}
+
+.issue-description {
+    font-size: 1.3em;
+    font-weight: 500;
+}
+
+.candidate-issues {
+    margin-left: 2em;
+    border-left: solid 1px; LightGray;
+    padding-left: 5%;
+    margin-top: .2em;
+    margin-bottom: .2em;
+}
+
+.issue-block {
+    border: 1px solid LightGray;
+    padding-left: .5em;
+    padding-top: .5em;
+    padding-bottom: .5em;
+    margin-bottom: .5em;
+}
+
+.issue-sev-high {
+    background-color: Pink;
+}
+
+.issue-sev-medium {
+    background-color: NavajoWhite;
+}
+
+.issue-sev-low {
+    background-color: LightCyan;
+}
+
+</style>
+</head>
+
+<body>
+
+<div id="metrics">
+    <div class="metrics-box bordered-box">
+        <div class="metrics-title">
+            Metrics:<br>
+        </div>
+        Total lines of code: <span id="loc">715</span><br>
+        Total lines skipped (#nosec): <span id="nosec">0</span>
+    </div>
+</div>
+
+
+
+
+<br>
+<div id="results">
+    
+<div id="issue-0">
+<div class="issue-block issue-sev-low">
+    <b>hardcoded_password_string: </b> Possible hardcoded password: 'FiAmaj78_PagPTglX8Zth2mcH4-5ZehRpFh5pX3uET2e2QUlBTtPqZJY74_jnhj7eHTnMKZgZlJ-E-kyrP-sQA=='<br>
+    <b>Test ID:</b> B105<br>
+    <b>Severity: </b>LOW<br>
+    <b>Confidence: </b>MEDIUM<br>
+    <b>CWE: </b><a href="https://cwe.mitre.org/data/definitions/259.html" target="_blank">CWE-259</a><br>
+    <b>File: </b><a href="./main.py" target="_blank">./main.py</a><br>
+    <b>Line number: </b>54<br>
+    <b>More info: </b><a href="https://bandit.readthedocs.io/en/1.7.9/plugins/b105_hardcoded_password_string.html" target="_blank">https://bandit.readthedocs.io/en/1.7.9/plugins/b105_hardcoded_password_string.html</a><br>
+
+<div class="code">
+<pre>
+53	influxdb_url = &quot;http://192.168.10.10:8086&quot;
+54	influxdb_token = &quot;FiAmaj78_PagPTglX8Zth2mcH4-5ZehRpFh5pX3uET2e2QUlBTtPqZJY74_jnhj7eHTnMKZgZlJ-E-kyrP-sQA==&quot;
+55	influxdb_org = &quot;DevOps-Tech&quot;
+</pre>
+</div>
+
+
+</div>
+</div>
+
+<div id="issue-1">
+<div class="issue-block issue-sev-medium">
+    <b>request_without_timeout: </b> Requests call without timeout<br>
+    <b>Test ID:</b> B113<br>
+    <b>Severity: </b>MEDIUM<br>
+    <b>Confidence: </b>LOW<br>
+    <b>CWE: </b><a href="https://cwe.mitre.org/data/definitions/400.html" target="_blank">CWE-400</a><br>
+    <b>File: </b><a href="./main.py" target="_blank">./main.py</a><br>
+    <b>Line number: </b>149<br>
+    <b>More info: </b><a href="https://bandit.readthedocs.io/en/1.7.9/plugins/b113_request_without_timeout.html" target="_blank">https://bandit.readthedocs.io/en/1.7.9/plugins/b113_request_without_timeout.html</a><br>
+
+<div class="code">
+<pre>
+148	    }
+149	    response = requests.get(url, params=params)
+150	    response.raise_for_status()
+</pre>
+</div>
+
+
+</div>
+</div>
+
+<div id="issue-2">
+<div class="issue-block issue-sev-medium">
+    <b>hardcoded_sql_expressions: </b> Possible SQL injection vector through string-based query construction.<br>
+    <b>Test ID:</b> B608<br>
+    <b>Severity: </b>MEDIUM<br>
+    <b>Confidence: </b>LOW<br>
+    <b>CWE: </b><a href="https://cwe.mitre.org/data/definitions/89.html" target="_blank">CWE-89</a><br>
+    <b>File: </b><a href="./main.py" target="_blank">./main.py</a><br>
+    <b>Line number: </b>202<br>
+    <b>More info: </b><a href="https://bandit.readthedocs.io/en/1.7.9/plugins/b608_hardcoded_sql_expressions.html" target="_blank">https://bandit.readthedocs.io/en/1.7.9/plugins/b608_hardcoded_sql_expressions.html</a><br>
+
+<div class="code">
+<pre>
+201	                # Insert query
+202	                insert_query = f&quot;&quot;&quot;
+203	                    INSERT INTO {table_name} (name, id, current_price, expected_return, high_24h, low_24h,
+204	                                              last_updated, price_change_24h, price_change_percentage_24h,
+205	                                              ath, ath_date, ath_change_percentage, atl_change_percentage,
+206	                                              market_cap, market_cap_change_24h, market_cap_change_percentage_24h,
+207	                                              market_cap_rank, circulating_supply, symbol,
+208	                                              price_day_1, price_day_2, price_day_3, price_day_4,
+209	                                              price_day_5, price_day_6, price_day_7)
+210	                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+211	                            %s, %s, %s, %s, %s, %s, %s)
+212	                    ON DUPLICATE KEY UPDATE
+213	                    name=VALUES(name), current_price=VALUES(current_price), expected_return=VALUES(expected_return),
+214	                    high_24h=VALUES(high_24h), low_24h=VALUES(low_24h), last_updated=VALUES(last_updated),
+215	                    price_change_24h=VALUES(price_change_24h), price_change_percentage_24h=VALUES(price_change_percentage_24h),
+216	                    ath=VALUES(ath), ath_date=VALUES(ath_date), ath_change_percentage=VALUES(ath_change_percentage),
+217	                    atl_change_percentage=VALUES(atl_change_percentage), market_cap=VALUES(market_cap),
+218	                    market_cap_change_24h=VALUES(market_cap_change_24h),
+219	                    market_cap_change_percentage_24h=VALUES(market_cap_change_percentage_24h),
+220	                    market_cap_rank=VALUES(market_cap_rank), circulating_supply=VALUES(circulating_supply),
+221	                    symbol=VALUES(symbol),
+222	                    price_day_1=VALUES(price_day_1), price_day_2=VALUES(price_day_2), price_day_3=VALUES(price_day_3),
+223	                    price_day_4=VALUES(price_day_4), price_day_5=VALUES(price_day_5), price_day_6=VALUES(price_day_6),
+224	                    price_day_7=VALUES(price_day_7)
+225	                &quot;&quot;&quot;
+226	                cursor.execute(insert_query, (
+</pre>
+</div>
+
+
+</div>
+</div>
+
+<div id="issue-3">
+<div class="issue-block issue-sev-high">
+    <b>flask_debug_true: </b> A Flask app appears to be run with debug=True, which exposes the Werkzeug debugger and allows the execution of arbitrary code.<br>
+    <b>Test ID:</b> B201<br>
+    <b>Severity: </b>HIGH<br>
+    <b>Confidence: </b>MEDIUM<br>
+    <b>CWE: </b><a href="https://cwe.mitre.org/data/definitions/94.html" target="_blank">CWE-94</a><br>
+    <b>File: </b><a href="./main.py" target="_blank">./main.py</a><br>
+    <b>Line number: </b>1003<br>
+    <b>More info: </b><a href="https://bandit.readthedocs.io/en/1.7.9/plugins/b201_flask_debug_true.html" target="_blank">https://bandit.readthedocs.io/en/1.7.9/plugins/b201_flask_debug_true.html</a><br>
+
+<div class="code">
+<pre>
+1002	    create_price_predictions_table()  # Ensure the table is created before running the app
+1003	    app.run(host=&#x27;0.0.0.0&#x27;, debug=True)
+</pre>
+</div>
+
+
+</div>
+</div>
+
+<div id="issue-4">
+<div class="issue-block issue-sev-medium">
+    <b>hardcoded_bind_all_interfaces: </b> Possible binding to all interfaces.<br>
+    <b>Test ID:</b> B104<br>
+    <b>Severity: </b>MEDIUM<br>
+    <b>Confidence: </b>MEDIUM<br>
+    <b>CWE: </b><a href="https://cwe.mitre.org/data/definitions/605.html" target="_blank">CWE-605</a><br>
+    <b>File: </b><a href="./main.py" target="_blank">./main.py</a><br>
+    <b>Line number: </b>1003<br>
+    <b>More info: </b><a href="https://bandit.readthedocs.io/en/1.7.9/plugins/b104_hardcoded_bind_all_interfaces.html" target="_blank">https://bandit.readthedocs.io/en/1.7.9/plugins/b104_hardcoded_bind_all_interfaces.html</a><br>
+
+<div class="code">
+<pre>
+1002	    create_price_predictions_table()  # Ensure the table is created before running the app
+1003	    app.run(host=&#x27;0.0.0.0&#x27;, debug=True)
+</pre>
+</div>
+
+
+</div>
+</div>
+
+</div>
+
+</body>
+</html>
